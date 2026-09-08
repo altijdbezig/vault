@@ -3,7 +3,8 @@ import { supabase } from './client';
 
 const MESSAGE_COLUMNS = 'id, channel_id, sender_id, ciphertext, created_at, deleted_at';
 
-const DEFAULT_LIMIT = 50;
+/** One page of history. Exported so callers can tell a full page from a last one. */
+export const MESSAGE_PAGE_SIZE = 50;
 
 export interface FetchMessagesOptions {
   /** ISO timestamp: only return messages older than this, for paging back. */
@@ -27,7 +28,7 @@ export async function fetchMessages(
     .eq('channel_id', channelId)
     .is('deleted_at', null)
     .order('created_at', { ascending: false })
-    .limit(opts.limit ?? DEFAULT_LIMIT);
+    .limit(opts.limit ?? MESSAGE_PAGE_SIZE);
 
   if (opts.before) {
     query = query.lt('created_at', opts.before);

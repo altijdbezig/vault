@@ -44,7 +44,8 @@ vi.mock('../../lib/supabase/profiles', () => ({
   getProfileByUsername: mocks.getProfileByUsername,
 }));
 
-vi.mock('../../lib/supabase/messages', () => ({
+vi.mock('../../lib/supabase/messages', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   fetchMessages: mocks.fetchMessages,
   sendMessage: mocks.sendMessage,
   subscribeToChannel: mocks.subscribeToChannel,

@@ -9,6 +9,7 @@ import {
   setUnlockedKey,
   unlockPrivateKey,
 } from '../../lib/crypto';
+import { MESSAGE_PAGE_SIZE } from '../../lib/supabase/messages';
 import type { ChannelMemberKey, MessageRow } from '../../types';
 import { useMessages } from '../useMessages';
 
@@ -20,7 +21,8 @@ const mocks = vi.hoisted(() => ({
   lock: vi.fn(),
 }));
 
-vi.mock('../../lib/supabase/messages', () => ({
+vi.mock('../../lib/supabase/messages', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   fetchMessages: mocks.fetchMessages,
   sendMessage: mocks.sendMessage,
   subscribeToChannel: mocks.subscribeToChannel,
@@ -443,5 +445,112 @@ describe('server channels', () => {
     expect(result.current.messages[0]?.unreadable).toBe(true);
     expect(result.current.messages[0]?.text).toBeNull();
     expect(result.current.error).toBeNull();
+  });
+});
+
+describe('loading older messages', () => {
+  /** A full first page, so the hook knows there is more behind it. */
+  async function fullFirstPage(): Promise<MessageRow[]> {
+    const rows: MessageRow[] = [];
+    for (let index = 0; index < MESSAGE_PAGE_SIZE; index += 1) {
+      rows.push(
+        await makeRow(
+          `recent-${index}`,
+          bob,
+          `recent ${index}`,
+          [alice, bob],
+          // 10:00 onwards, one minute apart, so the order is unambiguous.
+          new Date(Date.UTC(2026, 8, 8, 10, index)).toISOString(),
+        ),
+      );
+    }
+    return rows;
+  }
+
+  it('pages back with the oldest message as the cursor and keeps no duplicates', async () => {
+    const firstPage = await fullFirstPage();
+    const older = await makeRow('older-1', bob, 'van eerder', [alice, bob], '2026-09-08T08:00:00.000Z');
+
+    mocks.fetchMessages.mockResolvedValueOnce(firstPage);
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await waitFor(() => expect(result.current.messages).toHaveLength(MESSAGE_PAGE_SIZE));
+    expect(result.current.reachedStart).toBe(false);
+
+    // The previous page overlaps with what we already hold: a real server does
+    // this whenever a message arrives between the two requests.
+    mocks.fetchMessages.mockResolvedValueOnce([older, ...firstPage.slice(0, 3)]);
+
+    await act(async () => {
+      await result.current.loadOlder();
+    });
+
+    expect(mocks.fetchMessages).toHaveBeenLastCalledWith(CHANNEL_ID, {
+      before: firstPage[0]?.created_at,
+    });
+
+    // One extra message, not four: the overlap was deduplicated by id.
+    await waitFor(() => expect(result.current.messages).toHaveLength(MESSAGE_PAGE_SIZE + 1));
+    const ids = result.current.messages.map((message) => message.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    // Oldest first, and decrypted like everything else.
+    expect(ids[0]).toBe('older-1');
+    await waitFor(() => expect(result.current.messages[0]?.text).toBe('van eerder'));
+  });
+
+  it('reports the start of the channel when a short first page comes back', async () => {
+    mocks.fetchMessages.mockResolvedValue([
+      await makeRow('m1', bob, 'het enige bericht', [alice, bob]),
+    ]);
+
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+
+    await waitFor(() => expect(result.current.reachedStart).toBe(true));
+
+    // Nothing to page back to, so nothing is asked for.
+    mocks.fetchMessages.mockClear();
+    await act(async () => {
+      await result.current.loadOlder();
+    });
+    expect(mocks.fetchMessages).not.toHaveBeenCalled();
+  });
+
+  it('reports the start once a short page comes back from paging', async () => {
+    mocks.fetchMessages.mockResolvedValueOnce(await fullFirstPage());
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+    await waitFor(() => expect(result.current.messages).toHaveLength(MESSAGE_PAGE_SIZE));
+
+    mocks.fetchMessages.mockResolvedValueOnce([
+      await makeRow('older-1', bob, 'de eerste', [alice, bob], '2026-09-08T08:00:00.000Z'),
+    ]);
+
+    await act(async () => {
+      await result.current.loadOlder();
+    });
+
+    await waitFor(() => expect(result.current.reachedStart).toBe(true));
+  });
+
+  it('ignores a second request while one is still in flight', async () => {
+    mocks.fetchMessages.mockResolvedValueOnce(await fullFirstPage());
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+    await waitFor(() => expect(result.current.messages).toHaveLength(MESSAGE_PAGE_SIZE));
+
+    let release: (rows: MessageRow[]) => void = () => {};
+    mocks.fetchMessages.mockReturnValueOnce(
+      new Promise<MessageRow[]>((resolve) => {
+        release = resolve;
+      }),
+    );
+
+    await act(async () => {
+      // A scroll handler fires many times per second; only one request may go.
+      const first = result.current.loadOlder();
+      const second = result.current.loadOlder();
+      release([]);
+      await Promise.all([first, second]);
+    });
+
+    expect(mocks.fetchMessages).toHaveBeenCalledTimes(2);
   });
 });

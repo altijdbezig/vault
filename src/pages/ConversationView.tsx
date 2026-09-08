@@ -33,8 +33,19 @@ export function ConversationView({
   onAddMember,
   onLeaveGroup,
 }: ConversationViewProps) {
-  const { messages, members, membersWithoutKey, loading, error, send, retry, dismiss } =
-    useMessages(channelId);
+  const {
+    messages,
+    members,
+    membersWithoutKey,
+    loading,
+    loadingOlder,
+    reachedStart,
+    error,
+    loadOlder,
+    send,
+    retry,
+    dismiss,
+  } = useMessages(channelId);
   const [showMembers, setShowMembers] = useState(true);
   const [confirmLeave, setConfirmLeave] = useState(false);
 
@@ -129,6 +140,11 @@ export function ConversationView({
         <MessageList
           messages={messages}
           loading={loading}
+          loadingOlder={loadingOlder}
+          reachedStart={reachedStart}
+          onLoadOlder={() => {
+            void loadOlder();
+          }}
           onRetry={(localId) => {
             void retry(localId);
           }}

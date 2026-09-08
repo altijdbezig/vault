@@ -8,7 +8,12 @@ import {
   NotARecipientError,
 } from '../lib/crypto';
 import { getPublicKeysForChannel } from '../lib/supabase/profiles';
-import { fetchMessages, sendMessage, subscribeToChannel } from '../lib/supabase/messages';
+import {
+  fetchMessages,
+  MESSAGE_PAGE_SIZE,
+  sendMessage,
+  subscribeToChannel,
+} from '../lib/supabase/messages';
 import type { ChannelMemberKey, MessageRow } from '../types';
 import { useAuth } from './useAuth';
 
@@ -48,8 +53,14 @@ export interface UseMessagesResult {
   /** Members we cannot encrypt to, because their profile has no public key. */
   membersWithoutKey: ChannelMemberKey[];
   loading: boolean;
+  /** True while a page of older messages is on its way in. */
+  loadingOlder: boolean;
+  /** True once we have seen the very first message of the channel. */
+  reachedStart: boolean;
   /** Set when something went wrong that the user should see. */
   error: string | null;
+  /** Fetches the page before the oldest message we hold. */
+  loadOlder(): Promise<void>;
   send(plaintext: string): Promise<void>;
   retry(localId: string): Promise<void>;
   dismiss(localId: string): void;
@@ -88,7 +99,13 @@ export function useMessages(channelId: string | null): UseMessagesResult {
   const [pending, setPending] = useState<PendingMessage[]>([]);
   const [members, setMembers] = useState<ChannelMemberKey[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [reachedStart, setReachedStart] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Guards the paging request against a scroll handler that fires many times
+  // per second. A ref, not the state above: state updates land too late.
+  const loadingOlderRef = useRef(false);
 
   // Decrypted text is cached by message id: decrypting on every render would
   // be both slow and pointless, the ciphertext never changes.
@@ -106,6 +123,9 @@ export function useMessages(channelId: string | null): UseMessagesResult {
     setPending([]);
     setMembers([]);
     setError(null);
+    setLoadingOlder(false);
+    setReachedStart(false);
+    loadingOlderRef.current = false;
 
     if (!channelId) {
       setLoading(false);
@@ -145,6 +165,10 @@ export function useMessages(channelId: string | null): UseMessagesResult {
         setMembers(channelMembers);
         membersRef.current = channelMembers;
         ready = true;
+        // A short first page means there is nothing older to page back to.
+        if (fetched.length < MESSAGE_PAGE_SIZE) {
+          setReachedStart(true);
+        }
         // Duplicates between the buffer and the fetch are removed by id.
         setRows((current) => mergeRows(current, [...fetched, ...buffered]));
       } catch (caught) {
@@ -232,6 +256,38 @@ export function useMessages(channelId: string | null): UseMessagesResult {
       cancelled = true;
     };
   }, [rows, decryptRow]);
+
+  /**
+   * Loads the page of messages before the oldest one we hold.
+   *
+   * mergeRows deduplicates by id, so a page that overlaps with what is already
+   * on screen cannot produce a second copy of anything. The decrypt effect
+   * picks the new rows up on its own and works through them in the same
+   * batches as the first page.
+   */
+  const loadOlder = useCallback(async (): Promise<void> => {
+    const oldest = rows[0];
+    if (!channelId || !oldest || reachedStart || loadingOlderRef.current) {
+      return;
+    }
+
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+
+    try {
+      const older = await fetchMessages(channelId, { before: oldest.created_at });
+      if (older.length < MESSAGE_PAGE_SIZE) {
+        setReachedStart(true);
+      }
+      setRows((current) => mergeRows(current, older));
+    } catch (caught) {
+      console.error('Kon oudere berichten niet laden:', caught);
+      setError('Oudere berichten konden niet geladen worden.');
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [channelId, reachedStart, rows]);
 
   /** Encrypts to every current member and inserts the row. */
   const deliver = useCallback(
@@ -390,5 +446,17 @@ export function useMessages(channelId: string | null): UseMessagesResult {
     [members],
   );
 
-  return { messages, members, membersWithoutKey, loading, error, send, retry, dismiss };
+  return {
+    messages,
+    members,
+    membersWithoutKey,
+    loading,
+    loadingOlder,
+    reachedStart,
+    error,
+    loadOlder,
+    send,
+    retry,
+    dismiss,
+  };
 }
