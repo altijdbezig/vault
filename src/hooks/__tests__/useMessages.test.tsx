@@ -15,6 +15,7 @@ import { useMessages } from '../useMessages';
 
 const mocks = vi.hoisted(() => ({
   fetchMessages: vi.fn(),
+  fetchMessagesSince: vi.fn(),
   sendMessage: vi.fn(),
   subscribeToChannel: vi.fn(),
   getPublicKeysForChannel: vi.fn(),
@@ -24,6 +25,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../lib/supabase/messages', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   fetchMessages: mocks.fetchMessages,
+  fetchMessagesSince: mocks.fetchMessagesSince,
   sendMessage: mocks.sendMessage,
   subscribeToChannel: mocks.subscribeToChannel,
 }));
@@ -53,6 +55,8 @@ let members: ChannelMemberKey[];
 
 /** Emits a realtime INSERT into the hook under test. */
 let emit: (row: MessageRow) => void = () => {};
+/** Reports a realtime connection change to the hook under test. */
+let emitStatus: (status: 'connected' | 'disconnected') => void = () => {};
 let unsubscribe = vi.fn();
 
 async function makeIdentity(userId: string, username: string): Promise<Identity> {
@@ -113,12 +117,18 @@ beforeEach(() => {
 
   unsubscribe = vi.fn();
   mocks.subscribeToChannel.mockImplementation(
-    (_channelId: string, onInsert: (row: MessageRow) => void) => {
+    (
+      _channelId: string,
+      onInsert: (row: MessageRow) => void,
+      onStatus?: (status: 'connected' | 'disconnected') => void,
+    ) => {
       emit = onInsert;
+      emitStatus = onStatus ?? (() => {});
       return unsubscribe;
     },
   );
   mocks.fetchMessages.mockResolvedValue([]);
+  mocks.fetchMessagesSince.mockResolvedValue([]);
   mocks.getPublicKeysForChannel.mockResolvedValue(members);
 });
 
@@ -552,5 +562,72 @@ describe('loading older messages', () => {
     });
 
     expect(mocks.fetchMessages).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('losing and regaining the realtime connection', () => {
+  it('reports the connection as down and back up', async () => {
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.connected).toBe(true);
+
+    await act(async () => {
+      emitStatus('disconnected');
+    });
+    expect(result.current.connected).toBe(false);
+
+    await act(async () => {
+      emitStatus('connected');
+    });
+    await waitFor(() => expect(result.current.connected).toBe(true));
+  });
+
+  it('fetches what it missed on reconnect and merges it without duplicates', async () => {
+    const onScreen = await makeRow('m1', bob, 'voor de storing', [alice, bob], '2026-09-08T10:00:00.000Z');
+    mocks.fetchMessages.mockResolvedValueOnce([onScreen]);
+
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+    await waitFor(() => expect(result.current.messages[0]?.text).toBe('voor de storing'));
+
+    const missed = await makeRow('m2', bob, 'tijdens de storing', [alice, bob], '2026-09-08T10:05:00.000Z');
+    // The catch-up query overlaps with what is already on screen, and the
+    // subscription redelivers one of them too. Neither may duplicate.
+    mocks.fetchMessagesSince.mockResolvedValueOnce([onScreen, missed]);
+
+    await act(async () => {
+      emitStatus('disconnected');
+    });
+    await act(async () => {
+      emitStatus('connected');
+    });
+    await act(async () => {
+      emit(missed);
+    });
+
+    await waitFor(() => expect(result.current.messages).toHaveLength(2));
+    expect(mocks.fetchMessagesSince).toHaveBeenCalledWith(CHANNEL_ID, onScreen.created_at);
+    await waitFor(() =>
+      expect(result.current.messages.map((message) => message.text)).toEqual([
+        'voor de storing',
+        'tijdens de storing',
+      ]),
+    );
+    const ids = result.current.messages.map((message) => message.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('does not catch up when the first subscribe succeeds', async () => {
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mocks.fetchMessages.mockClear();
+    mocks.fetchMessagesSince.mockClear();
+    await act(async () => {
+      emitStatus('connected');
+    });
+
+    // Nothing was missed, so nothing is refetched.
+    expect(mocks.fetchMessages).not.toHaveBeenCalled();
+    expect(mocks.fetchMessagesSince).not.toHaveBeenCalled();
   });
 });

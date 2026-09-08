@@ -44,6 +44,7 @@ export function ConversationView({
     loading,
     loadingOlder,
     reachedStart,
+    connected,
     error,
     loadOlder,
     send,
@@ -138,6 +139,16 @@ export function ConversationView({
             </div>
           ) : null}
         </header>
+
+        {!connected ? (
+          <p
+            role="status"
+            className="bg-amber-950/60 px-4 py-1.5 text-center text-xs text-amber-200"
+          >
+            Verbinding verbroken. Nieuwe berichten komen pas binnen als de
+            verbinding terug is.
+          </p>
+        ) : null}
 
         <div className="px-4 pt-2 empty:hidden">
           <ErrorNotice message={error} />

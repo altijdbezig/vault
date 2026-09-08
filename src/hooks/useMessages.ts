@@ -10,6 +10,7 @@ import {
 import { getPublicKeysForChannel } from '../lib/supabase/profiles';
 import {
   fetchMessages,
+  fetchMessagesSince,
   MESSAGE_PAGE_SIZE,
   sendMessage,
   subscribeToChannel,
@@ -57,6 +58,8 @@ export interface UseMessagesResult {
   loadingOlder: boolean;
   /** True once we have seen the very first message of the channel. */
   reachedStart: boolean;
+  /** False while the realtime socket is down, so the UI can say so. */
+  connected: boolean;
   /** Set when something went wrong that the user should see. */
   error: string | null;
   /** Fetches the page before the oldest message we hold. */
@@ -101,6 +104,7 @@ export function useMessages(channelId: string | null): UseMessagesResult {
   const [loading, setLoading] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [reachedStart, setReachedStart] = useState(false);
+  const [connected, setConnected] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Guards the paging request against a scroll handler that fires many times
@@ -116,6 +120,11 @@ export function useMessages(channelId: string | null): UseMessagesResult {
   const membersRef = useRef<ChannelMemberKey[]>([]);
   membersRef.current = members;
 
+  // Read by the reconnect handler, which is created once per channel and
+  // would otherwise catch up from whatever the newest message was on mount.
+  const rowsRef = useRef<MessageRow[]>([]);
+  rowsRef.current = rows;
+
   useEffect(() => {
     decryptedRef.current = new Map();
     startedRef.current = new Set();
@@ -125,6 +134,7 @@ export function useMessages(channelId: string | null): UseMessagesResult {
     setError(null);
     setLoadingOlder(false);
     setReachedStart(false);
+    setConnected(true);
     loadingOlderRef.current = false;
 
     if (!channelId) {
@@ -138,19 +148,66 @@ export function useMessages(channelId: string | null): UseMessagesResult {
     let ready = false;
     const buffered: MessageRow[] = [];
 
+    // True once the socket has dropped at least once, so a first successful
+    // subscribe does not trigger a pointless catch-up.
+    let wasDisconnected = false;
+
+    /**
+     * Fetches whatever arrived while the socket was down.
+     *
+     * Merged by id like everything else, so a message that both the catch-up
+     * and the subscription delivered appears once. The page is not reloaded:
+     * that would throw away the decrypted messages already on screen and make
+     * the user unlock nothing but re-decrypt everything.
+     */
+    async function catchUp(): Promise<void> {
+      if (cancelled || !ready || !channelId) {
+        return;
+      }
+      const newest = rowsRef.current[rowsRef.current.length - 1];
+      try {
+        const missed = newest
+          ? await fetchMessagesSince(channelId, newest.created_at)
+          : await fetchMessages(channelId);
+        if (!cancelled && missed.length > 0) {
+          setRows((current) => mergeRows(current, missed));
+        }
+      } catch (caught) {
+        console.error('Kon gemiste berichten niet ophalen:', caught);
+      }
+    }
+
     // Subscribe BEFORE fetching. The other way around leaves a gap: anything
     // inserted between the fetch and the subscription would be lost until the
     // next reload. Rows arriving before the fetch lands are buffered.
-    const unsubscribe = subscribeToChannel(channelId, (row) => {
-      if (cancelled) {
-        return;
-      }
-      if (ready) {
-        setRows((current) => mergeRows(current, [row]));
-      } else {
-        buffered.push(row);
-      }
-    });
+    const unsubscribe = subscribeToChannel(
+      channelId,
+      (row) => {
+        if (cancelled) {
+          return;
+        }
+        if (ready) {
+          setRows((current) => mergeRows(current, [row]));
+        } else {
+          buffered.push(row);
+        }
+      },
+      (status) => {
+        if (cancelled) {
+          return;
+        }
+        setConnected(status === 'connected');
+
+        if (status === 'disconnected') {
+          wasDisconnected = true;
+          return;
+        }
+        if (wasDisconnected) {
+          wasDisconnected = false;
+          void catchUp();
+        }
+      },
+    );
 
     void (async () => {
       try {
@@ -453,6 +510,7 @@ export function useMessages(channelId: string | null): UseMessagesResult {
     loading,
     loadingOlder,
     reachedStart,
+    connected,
     error,
     loadOlder,
     send,
