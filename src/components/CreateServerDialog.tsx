@@ -4,6 +4,7 @@ import { Button } from './Button';
 import { ErrorNotice } from './ErrorNotice';
 import { Field } from './Field';
 import { describeError } from '../lib/errorMessages';
+import { serverIdFromInvite } from '../lib/invite';
 
 interface CreateServerDialogProps {
   onClose: () => void;
@@ -19,7 +20,7 @@ export function CreateServerDialog({
   onCreated,
 }: CreateServerDialogProps) {
   const [name, setName] = useState('');
-  const [serverId, setServerId] = useState('');
+  const [invite, setInvite] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,12 +44,18 @@ export function CreateServerDialog({
     });
   }
 
+  // Accepts a full invite link or the bare id, so pasting either works.
+  const invitedServerId = serverIdFromInvite(invite);
+
   async function handleJoin(event: FormEvent): Promise<void> {
     event.preventDefault();
+    if (!invitedServerId) {
+      setError('Dit is geen geldige uitnodigingslink of server-id.');
+      return;
+    }
     await run(async () => {
-      const trimmed = serverId.trim();
-      await onJoin(trimmed);
-      onCreated(trimmed);
+      await onJoin(invitedServerId);
+      onCreated(invitedServerId);
     });
   }
 
@@ -78,12 +85,13 @@ export function CreateServerDialog({
 
         <form onSubmit={handleJoin} className="flex flex-col gap-3">
           <Field
-            label="Lid worden met server-id"
-            value={serverId}
-            onChange={(event) => setServerId(event.target.value)}
-            hint="Vraag iemand om het server-id. Uitnodigingslinks komen later."
+            label="Lid worden met een uitnodiging"
+            value={invite}
+            onChange={(event) => setInvite(event.target.value)}
+            placeholder="https://…/join/…"
+            hint="Plak de uitnodigingslink die je hebt gekregen. Het kale server-id werkt ook."
           />
-          <Button type="submit" variant="ghost" disabled={busy || serverId.trim().length === 0}>
+          <Button type="submit" variant="ghost" disabled={busy || invite.trim().length === 0}>
             {busy ? 'Bezig…' : 'Lid worden'}
           </Button>
         </form>

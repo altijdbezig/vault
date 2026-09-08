@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useMatch, useNavigate } from 'react-router-dom';
 import { AddGroupMemberDialog } from '../components/AddGroupMemberDialog';
 import { Button } from '../components/Button';
@@ -17,6 +17,7 @@ import { useIsWideScreen } from '../hooks/useMediaQuery';
 import { useServerChannels, useServers } from '../hooks/useServers';
 import { useUnread } from '../hooks/useUnread';
 import { describeError } from '../lib/errorMessages';
+import { inviteLinkFor } from '../lib/invite';
 import type { ChannelType } from '../types';
 import { ConversationView } from './ConversationView';
 
@@ -51,6 +52,7 @@ export function AppShell() {
   // /dm exists as a route of its own so the DM button has somewhere to go.
   // Sending it to "/" instead put it straight back into the redirect below,
   // which bounced it into the server it had just left.
+  const joinMatch = useMatch('/join/:serverId');
   const dmMatch = useMatch('/dm/:channelId');
   const serverMatch = useMatch('/server/:serverId');
   const serverChannelMatch = useMatch('/server/:serverId/:channelId');
@@ -92,7 +94,35 @@ export function AppShell() {
   const [showKeyPanel, setShowKeyPanel] = useState(false);
   /** Mobile only: the server rail is a drawer there, not a column. */
   const [showRail, setShowRail] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
+  /** Invite ids already handled, so StrictMode cannot join twice. */
+  const handledInvites = useRef(new Set<string>());
   const [exportError, setExportError] = useState<string | null>(null);
+
+  /*
+   * Following an invite link.
+   *
+   * /join/:serverId is reachable while signed out too: the URL survives the
+   * sign-in screen, so this runs the moment the app is unlocked and drops the
+   * user in the server rather than making them find it.
+   */
+  const inviteServerId = joinMatch?.params.serverId ?? null;
+  useEffect(() => {
+    if (!inviteServerId || handledInvites.current.has(inviteServerId)) {
+      return;
+    }
+    handledInvites.current.add(inviteServerId);
+
+    void (async () => {
+      try {
+        await joinServer(inviteServerId);
+        navigate(`/server/${inviteServerId}`, { replace: true });
+      } catch (caught) {
+        console.error('Kon niet joinen via uitnodiging:', caught);
+        setJoinError(describeError(caught));
+      }
+    })();
+  }, [inviteServerId, joinServer, navigate]);
 
   // Remember the last real destination for the "/" redirect.
   useEffect(() => {
@@ -192,6 +222,38 @@ export function AppShell() {
     }
   }
 
+  if (inviteServerId) {
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <div className="w-full max-w-sm text-center">
+          {joinError ? (
+            <>
+              <h1 className="text-sm font-semibold text-ink-100">
+                Deze uitnodiging werkt niet
+              </h1>
+              <p className="mt-2 text-sm leading-relaxed text-ink-500">{joinError}</p>
+              <p className="mt-2 text-xs leading-relaxed text-ink-500">
+                Vraag degene die hem stuurde om een nieuwe link, of om het
+                server-id.
+              </p>
+              <Button
+                variant="ghost"
+                className="mt-4 w-full"
+                onClick={() => {
+                  navigate('/dm', { replace: true });
+                }}
+              >
+                Terug naar je gesprekken
+              </Button>
+            </>
+          ) : (
+            <p className="text-sm text-ink-500">Bezig met lid worden…</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative flex h-full overflow-hidden">
       {/* Tapping outside the rail drawer closes it. Mobile only. */}
@@ -256,6 +318,7 @@ export function AppShell() {
             onSelect={(channelId) => navigate(`/server/${activeServer.id}/${channelId}`)}
             onCreateChannel={() => setShowCreateChannel(true)}
             unread={unread}
+            inviteLink={inviteLinkFor(activeServer.id, window.location.origin)}
           />
         ) : (
           <ChannelList
@@ -332,11 +395,15 @@ export function AppShell() {
           <div>
             <ErrorNotice message={dmError ?? serverError} />
             <p className="mt-2">
-              {dmMode
-                ? 'Kies links een gesprek, of begin er een nieuwe.'
-                : serverChannelsLoading
+              {!dmMode
+                ? serverChannelsLoading
                   ? 'Kanalen laden…'
-                  : 'Deze server heeft nog geen kanaal.'}
+                  : 'Deze server heeft nog geen kanaal.'
+                : dmLoading
+                  ? 'Gesprekken laden…'
+                  : dmChannels.length === 0
+                    ? 'Je hebt nog geen gesprekken. Begin er een met + links, of maak een groep.'
+                    : 'Kies links een gesprek, of begin er een nieuwe.'}
             </p>
             <p className="mt-2 text-xs">
               Berichten worden in je browser versleuteld. De server ziet alleen ciphertext.

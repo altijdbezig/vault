@@ -23,6 +23,10 @@ export function MemberList({ members, currentUserId }: MemberListProps) {
         Leden — {members.length}
       </h3>
 
+      {members.length === 0 ? (
+        <p className="mt-2 text-sm text-ink-500">Leden laden…</p>
+      ) : null}
+
       <ul className="mt-2 flex flex-col gap-3">
         {members.map((member) => (
           <li key={member.userId}>
@@ -51,10 +55,12 @@ export function MemberList({ members, currentUserId }: MemberListProps) {
         ))}
       </ul>
 
-      <p className="mt-4 text-xs leading-relaxed text-ink-500">
-        Vergelijk deze vingerafdrukken buiten Vault om. Klopt er één niet, dan praat
-        je met iemand anders dan je denkt.
-      </p>
+      {members.length > 0 ? (
+        <p className="mt-4 text-xs leading-relaxed text-ink-500">
+          Vergelijk deze vingerafdrukken buiten Vault om. Klopt er één niet, dan praat
+          je met iemand anders dan je denkt.
+        </p>
+      ) : null}
     </aside>
   );
 }

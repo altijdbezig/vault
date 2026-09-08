@@ -140,6 +140,7 @@ beforeEach(() => {
   mocks.trackPresence.mockReturnValue(() => {});
   mocks.fetchUnreadState.mockResolvedValue({ counts: {}, channelServers: {} });
   mocks.markChannelRead.mockResolvedValue(undefined);
+  mocks.joinServer.mockResolvedValue(undefined);
 });
 
 function dmButton(): HTMLElement {
@@ -328,5 +329,36 @@ describe('C — one column at a time on a phone', () => {
     // an empty pane would be a wasted click.
     await waitFor(() => expect(mocks.fetchMessages).toHaveBeenCalledWith('chan-1a'));
     expect(screen.getByRole('heading', { name: 'Kanalen' })).toBeTruthy();
+  });
+});
+
+describe('D4 — invite links', () => {
+  it('joins the server and opens it', async () => {
+    renderShell('/join/srv-2');
+
+    await waitFor(() => expect(mocks.joinServer).toHaveBeenCalledWith('srv-2'));
+    // Straight into the server, not back to a form asking for an id.
+    await waitFor(() => expect(mocks.fetchMessages).toHaveBeenCalledWith('chan-2a'));
+    expect(screen.getByRole('heading', { name: 'Kanalen' })).toBeTruthy();
+  });
+
+  it('joins once, even though effects run twice in development', async () => {
+    renderShell('/join/srv-2');
+
+    await waitFor(() => expect(mocks.joinServer).toHaveBeenCalled());
+    await settle();
+
+    expect(mocks.joinServer).toHaveBeenCalledTimes(1);
+  });
+
+  it('explains a broken invite instead of dropping you on a blank screen', async () => {
+    mocks.joinServer.mockRejectedValueOnce(new Error('server bestaat niet'));
+
+    renderShell('/join/srv-2');
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Deze uitnodiging werkt niet' })).toBeTruthy(),
+    );
+    expect(screen.getByRole('button', { name: 'Terug naar je gesprekken' })).toBeTruthy();
   });
 });

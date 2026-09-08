@@ -1,6 +1,7 @@
 import { requireChannelName } from '../channelName';
 import type { ChannelSummary, ServerMember, ServerRole, ServerSummary } from '../../types';
 import { supabase } from './client';
+import { isUniqueViolation } from './errors';
 import { currentUserId } from './session';
 
 /** You are not allowed to do this in this server. */
@@ -240,7 +241,10 @@ export async function joinServer(serverId: string): Promise<void> {
     .from('server_members')
     .insert({ server_id: serverId, user_id: me, role: 'member' });
 
-  if (error) {
+  // Following an invite link twice, or following one for a server you are
+  // already in, is not an error worth showing anyone. Fall through and make
+  // sure the channel memberships are complete either way.
+  if (error && !isUniqueViolation(error)) {
     throw error;
   }
 
@@ -253,7 +257,7 @@ export async function joinServer(serverId: string): Promise<void> {
     const { error: joinError } = await supabase
       .from('channel_members')
       .insert({ channel_id: channel.id, user_id: me });
-    if (joinError) {
+    if (joinError && !isUniqueViolation(joinError)) {
       throw joinError;
     }
   }

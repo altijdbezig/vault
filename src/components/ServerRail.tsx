@@ -69,6 +69,12 @@ export function ServerRail({
       <div className="h-px w-8 bg-ink-800" />
 
       <ul className="flex flex-1 flex-col items-center gap-2 overflow-y-auto">
+        {servers.length === 0 ? (
+          <li className="px-1 text-center text-[10px] leading-tight text-ink-500">
+            nog geen servers
+          </li>
+        ) : null}
+
         {servers.map((server) => (
           <li key={server.id} className="relative">
             <button
