@@ -1,5 +1,7 @@
 import { Button } from './Button';
+import { OnlineDot } from './OnlineDot';
 import { UnreadBadge } from './UnreadBadge';
+import { usePresence } from '../hooks/usePresence';
 import { channelPrefix } from '../lib/channelName';
 import type { ChannelSummary } from '../types';
 
@@ -30,6 +32,8 @@ export function ChannelList({
   onNewGroup,
   unread,
 }: ChannelListProps) {
+  const { anyOnline } = usePresence();
+
   return (
     <nav className="flex h-full flex-col">
       <div className="flex items-center justify-between px-3 py-2">
@@ -67,6 +71,9 @@ export function ChannelList({
               <span aria-hidden="true" className="shrink-0 text-ink-500">
                 {channelPrefix(channel.type)}
               </span>
+              {anyOnline(channel.members.map((member) => member.userId)) ? (
+                <OnlineDot label={`${channel.displayName} is online`} />
+              ) : null}
               <span className="min-w-0 flex-1 truncate">
                 {channel.displayName || 'gesprek'}
               </span>

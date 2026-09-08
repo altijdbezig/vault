@@ -1,10 +1,26 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { useAuth } from './hooks/useAuth';
+import { PresenceProvider } from './hooks/usePresence';
 import { UnreadProvider } from './hooks/useUnread';
 import { AppShell } from './pages/AppShell';
 import { SignInPage } from './pages/SignInPage';
 import { SignUpPage } from './pages/SignUpPage';
 import { UnlockPage } from './pages/UnlockPage';
+
+/**
+ * The providers the signed-in app runs inside.
+ *
+ * Exported so tests mount the same stack the app does; a test that assembles
+ * its own would quietly stop matching reality the next time one is added.
+ */
+export function AppProviders({ children }: { children: ReactNode }) {
+  return (
+    <PresenceProvider>
+      <UnreadProvider>{children}</UnreadProvider>
+    </PresenceProvider>
+  );
+}
 
 /**
  * Routing is a switch on auth status on purpose.
@@ -36,9 +52,9 @@ export default function App() {
 
     case 'unlocked':
       return (
-        <UnreadProvider>
+        <AppProviders>
           <AppShell />
-        </UnreadProvider>
+        </AppProviders>
       );
   }
 }

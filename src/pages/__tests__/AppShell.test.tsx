@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
-import { UnreadProvider } from '../../hooks/useUnread';
+import { AppProviders } from '../../App';
 import type { ChannelSummary, ServerMember, ServerSummary } from '../../types';
 import { AppShell } from '../AppShell';
 
@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
   subscribeToChannel: vi.fn(),
   subscribeToAllMessages: vi.fn(),
+  trackPresence: vi.fn(),
   fetchUnreadState: vi.fn(),
   markChannelRead: vi.fn(),
 }));
@@ -48,6 +49,10 @@ vi.mock('../../lib/supabase/messages', () => ({
   sendMessage: mocks.sendMessage,
   subscribeToChannel: mocks.subscribeToChannel,
   subscribeToAllMessages: mocks.subscribeToAllMessages,
+}));
+
+vi.mock('../../lib/supabase/presence', () => ({
+  trackPresence: mocks.trackPresence,
 }));
 
 vi.mock('../../lib/supabase/unread', async (importOriginal) => ({
@@ -108,9 +113,9 @@ function renderShell(initialPath: string) {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <BackHandle />
-      <UnreadProvider>
+      <AppProviders>
         <AppShell />
-      </UnreadProvider>
+      </AppProviders>
     </MemoryRouter>,
   );
 }
@@ -131,6 +136,7 @@ beforeEach(() => {
   mocks.fetchMessages.mockResolvedValue([]);
   mocks.subscribeToChannel.mockReturnValue(() => {});
   mocks.subscribeToAllMessages.mockReturnValue(() => {});
+  mocks.trackPresence.mockReturnValue(() => {});
   mocks.fetchUnreadState.mockResolvedValue({ counts: {}, channelServers: {} });
   mocks.markChannelRead.mockResolvedValue(undefined);
 });
