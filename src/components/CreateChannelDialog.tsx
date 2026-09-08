@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { Button } from './Button';
 import { ErrorNotice } from './ErrorNotice';
 import { Field } from './Field';
+import { normalizeChannelName } from '../lib/channelName';
 import { describeError } from '../lib/errorMessages';
 
 interface CreateChannelDialogProps {
@@ -15,6 +16,10 @@ export function CreateChannelDialog({ onClose, onCreate, onCreated }: CreateChan
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Shown while typing, so the normalisation is never a surprise afterwards.
+  const normalized = normalizeChannelName(name);
+  const touched = name.trim().length > 0;
 
   async function handleSubmit(event: FormEvent): Promise<void> {
     event.preventDefault();
@@ -48,13 +53,26 @@ export function CreateChannelDialog({ onClose, onCreate, onCreated }: CreateChan
             onChange={(event) => setName(event.target.value)}
           />
 
+          <p className="-mt-2 text-xs text-ink-500" aria-live="polite">
+            {!touched ? (
+              'Kleine letters, streepjes in plaats van spaties. De # hoef je niet te typen.'
+            ) : normalized === '' ? (
+              <span className="text-amber-400">Hier blijft geen naam van over.</span>
+            ) : (
+              <>
+                Wordt aangemaakt als{' '}
+                <span className="font-mono text-ink-300">#{normalized}</span>
+              </>
+            )}
+          </p>
+
           <ErrorNotice message={error} />
 
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={onClose}>
               Annuleren
             </Button>
-            <Button type="submit" disabled={busy || name.trim().length === 0}>
+            <Button type="submit" disabled={busy || normalized === ''}>
               {busy ? 'Bezig…' : 'Aanmaken'}
             </Button>
           </div>

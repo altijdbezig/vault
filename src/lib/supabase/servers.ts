@@ -1,3 +1,4 @@
+import { requireChannelName } from '../channelName';
 import type { ChannelSummary, ServerMember, ServerRole, ServerSummary } from '../../types';
 import { supabase } from './client';
 
@@ -176,8 +177,15 @@ export async function getMyServerRole(serverId: string): Promise<ServerRole | nu
   return data?.role ?? null;
 }
 
-/** Creates a channel in a server. Owners and admins only. */
+/**
+ * Creates a channel in a server. Owners and admins only.
+ *
+ * The name is normalised here rather than in the dialog, so every path into
+ * this function gets the same treatment. The dialog shows the same result
+ * while you type, using the same function.
+ */
 export async function createChannel(serverId: string, name: string): Promise<string> {
+  const channelName = requireChannelName(name);
   const me = await currentUserId();
   const role = await getMyServerRole(serverId);
 
@@ -187,7 +195,7 @@ export async function createChannel(serverId: string, name: string): Promise<str
 
   const { data: channel, error } = await supabase
     .from('channels')
-    .insert({ type: 'text', server_id: serverId, name, created_by: me })
+    .insert({ type: 'text', server_id: serverId, name: channelName, created_by: me })
     .select('id')
     .single<{ id: string }>();
 

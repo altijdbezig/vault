@@ -1,3 +1,4 @@
+import { EmptyChannelNameError } from './channelName';
 import { KeyMismatchError, NoStoredKeyError } from '../hooks/useAuth';
 import { VaultCryptoError, WrongPassphraseError } from './crypto';
 import { UsernameTakenError } from './supabase/errors';
@@ -24,6 +25,7 @@ export function describeError(error: unknown): string {
 
   if (
     error instanceof UsernameTakenError ||
+    error instanceof EmptyChannelNameError ||
     error instanceof KeyMismatchError ||
     error instanceof NoStoredKeyError ||
     error instanceof VaultCryptoError
