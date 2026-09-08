@@ -71,44 +71,82 @@ export interface UseServerChannelsResult {
   createChannel(name: string): Promise<string>;
 }
 
+/**
+ * What one server's lists look like once loaded, tagged with the server they
+ * belong to.
+ *
+ * The tag is the whole point. Keeping channels and members in separate pieces
+ * of state let the hook report the previous server's channels during the gap
+ * between switching servers and the new lists arriving. Callers acted on that
+ * stale list — the redirect to "the first channel of this server" navigated to
+ * a channel of the server you had just left, which then unmounted and
+ * remounted the conversation and refetched messages and members all over
+ * again. One tagged object closes that gap: below, anything that does not
+ * match the requested server simply reads as "still loading".
+ */
+type ServerState =
+  | { serverId: string; status: 'ok'; channels: ChannelSummary[]; members: ServerMember[] }
+  | { serverId: string; status: 'error'; message: string };
+
+/** Stable identities, so callers can safely put these in dependency lists. */
+const NO_CHANNELS: ChannelSummary[] = [];
+const NO_MEMBERS: ServerMember[] = [];
+
+const LOAD_FAILED = 'Kanalen van deze server konden niet geladen worden.';
+
+async function loadServer(serverId: string): Promise<ServerState> {
+  try {
+    const [channels, members] = await Promise.all([
+      listServerChannels(serverId),
+      listServerMembers(serverId),
+    ]);
+    return { serverId, status: 'ok', channels, members };
+  } catch (caught) {
+    console.error('Kon server niet laden:', caught);
+    return { serverId, status: 'error', message: LOAD_FAILED };
+  }
+}
+
 /** Channels and members of the active server. */
 export function useServerChannels(
   serverId: string | null,
   role: ServerRole | null,
 ): UseServerChannelsResult {
-  const [channels, setChannels] = useState<ChannelSummary[]>([]);
-  const [members, setMembers] = useState<ServerMember[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [state, setState] = useState<ServerState | null>(null);
 
-  const reload = useCallback(async (): Promise<void> => {
+  useEffect(() => {
     if (!serverId) {
-      setChannels([]);
-      setMembers([]);
-      setLoading(false);
+      setState(null);
       return;
     }
 
-    setLoading(true);
-    try {
-      const [serverChannels, serverMembers] = await Promise.all([
-        listServerChannels(serverId),
-        listServerMembers(serverId),
-      ]);
-      setChannels(serverChannels);
-      setMembers(serverMembers);
-      setError(null);
-    } catch (caught) {
-      console.error('Kon server niet laden:', caught);
-      setError('Kanalen van deze server konden niet geladen worden.');
-    } finally {
-      setLoading(false);
-    }
+    // A slow answer for the server you just left must not overwrite the one
+    // you are looking at now.
+    let cancelled = false;
+
+    void (async () => {
+      const result = await loadServer(serverId);
+      if (!cancelled) {
+        setState(result);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [serverId]);
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  const reload = useCallback(async (): Promise<void> => {
+    setState(serverId ? await loadServer(serverId) : null);
+  }, [serverId]);
+
+  // Derived, not stored: there is no render in which these can disagree with
+  // the server that was asked for.
+  const current = state !== null && state.serverId === serverId ? state : null;
+  const channels = current?.status === 'ok' ? current.channels : NO_CHANNELS;
+  const members = current?.status === 'ok' ? current.members : NO_MEMBERS;
+  const error = current?.status === 'error' ? current.message : null;
+  const loading = serverId !== null && current === null;
 
   const createChannel = useCallback(
     async (name: string): Promise<string> => {
