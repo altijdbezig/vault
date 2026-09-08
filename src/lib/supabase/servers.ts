@@ -1,6 +1,7 @@
 import { requireChannelName } from '../channelName';
 import type { ChannelSummary, ServerMember, ServerRole, ServerSummary } from '../../types';
 import { supabase } from './client';
+import { currentUserId } from './session';
 
 /** You are not allowed to do this in this server. */
 export class NotAllowedError extends Error {
@@ -36,18 +37,6 @@ interface ServerMemberRow {
     username: string;
     key_fingerprint: string | null;
   };
-}
-
-async function currentUserId(): Promise<string> {
-  const { data, error } = await supabase.auth.getSession();
-  if (error) {
-    throw error;
-  }
-  const id = data.session?.user.id;
-  if (!id) {
-    throw new Error('Geen actieve sessie.');
-  }
-  return id;
 }
 
 /** Lists the servers you belong to. RLS does the membership filtering. */

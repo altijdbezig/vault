@@ -1,5 +1,6 @@
 import type { ChannelSummary, ChannelType } from '../../types';
 import { supabase } from './client';
+import { currentUserId } from './session';
 
 interface ChannelRow {
   id: string;
@@ -9,18 +10,6 @@ interface ChannelRow {
     user_id: string;
     profiles: { username: string };
   }[];
-}
-
-async function currentUserId(): Promise<string> {
-  const { data, error } = await supabase.auth.getSession();
-  if (error) {
-    throw error;
-  }
-  const id = data.session?.user.id;
-  if (!id) {
-    throw new Error('Geen actieve sessie.');
-  }
-  return id;
 }
 
 /**

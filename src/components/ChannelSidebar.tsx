@@ -1,4 +1,5 @@
 import { Button } from './Button';
+import { UnreadBadge } from './UnreadBadge';
 import type { ChannelSummary, ServerSummary } from '../types';
 
 interface ChannelSidebarProps {
@@ -10,6 +11,8 @@ interface ChannelSidebarProps {
   memberCount: number;
   onSelect: (channelId: string) => void;
   onCreateChannel: () => void;
+  /** Unread messages per channel id. */
+  unread: Record<string, number>;
 }
 
 export function ChannelSidebar({
@@ -21,6 +24,7 @@ export function ChannelSidebar({
   memberCount,
   onSelect,
   onCreateChannel,
+  unread,
 }: ChannelSidebarProps) {
   return (
     <nav className="flex h-full flex-col">
@@ -57,13 +61,17 @@ export function ChannelSidebar({
             <button
               type="button"
               onClick={() => onSelect(channel.id)}
-              className={`w-full truncate rounded px-2 py-1.5 text-left text-sm ${
+              className={`flex min-h-11 w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm ${
                 channel.id === activeChannelId
                   ? 'bg-ink-800 text-ink-100'
                   : 'text-ink-300 hover:bg-ink-850 hover:text-ink-100'
               }`}
             >
-              <span className="text-ink-500">#</span> {channel.displayName}
+              <span aria-hidden="true" className="shrink-0 text-ink-500">
+                #
+              </span>
+              <span className="min-w-0 flex-1 truncate">{channel.displayName}</span>
+              <UnreadBadge count={unread[channel.id] ?? 0} />
             </button>
           </li>
         ))}

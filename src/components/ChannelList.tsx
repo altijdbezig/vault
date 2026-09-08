@@ -1,4 +1,5 @@
 import { Button } from './Button';
+import { UnreadBadge } from './UnreadBadge';
 import { channelPrefix } from '../lib/channelName';
 import type { ChannelSummary } from '../types';
 
@@ -9,6 +10,8 @@ interface ChannelListProps {
   onSelect: (channelId: string) => void;
   onNewDm: () => void;
   onNewGroup: () => void;
+  /** Unread messages per channel id. */
+  unread: Record<string, number>;
 }
 
 /**
@@ -25,6 +28,7 @@ export function ChannelList({
   onSelect,
   onNewDm,
   onNewGroup,
+  unread,
 }: ChannelListProps) {
   return (
     <nav className="flex h-full flex-col">
@@ -66,9 +70,10 @@ export function ChannelList({
               <span className="min-w-0 flex-1 truncate">
                 {channel.displayName || 'gesprek'}
               </span>
-              {channel.type === 'group' ? (
+              {channel.type === 'group' && !unread[channel.id] ? (
                 <span className="shrink-0 text-xs text-ink-500">{channel.members.length}</span>
               ) : null}
+              <UnreadBadge count={unread[channel.id] ?? 0} />
             </button>
           </li>
         ))}

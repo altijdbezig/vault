@@ -14,6 +14,7 @@ import { ServerRail } from '../components/ServerRail';
 import { useAuth } from '../hooks/useAuth';
 import { useChannels } from '../hooks/useChannels';
 import { useServerChannels, useServers } from '../hooks/useServers';
+import { useUnread } from '../hooks/useUnread';
 import { describeError } from '../lib/errorMessages';
 import type { ChannelType } from '../types';
 import { ConversationView } from './ConversationView';
@@ -69,6 +70,7 @@ export function AppShell() {
     leaveGroup,
   } = useChannels();
   const { servers, createServer, joinServer } = useServers();
+  const { counts: unread, serverHasUnread, setActiveChannel } = useUnread();
 
   const activeServer = servers.find((server) => server.id === activeServerId) ?? null;
   const {
@@ -125,6 +127,12 @@ export function AppShell() {
     navigate(`/server/${serverMatch.params.serverId}/${firstChannelId}`, { replace: true });
   }, [navigate, firstChannelId, serverChannelsLoading, serverMatch]);
 
+  // The provider needs to know what is on screen to stop counting it as
+  // unread and to move the read marker.
+  useEffect(() => {
+    setActiveChannel(activeChannelId);
+  }, [activeChannelId, setActiveChannel]);
+
   /** The DM button: back to your last conversation, or the list. */
   function goToDmMode(): void {
     const last = readStored(LAST_DM_PATH_KEY);
@@ -132,6 +140,12 @@ export function AppShell() {
       last !== null && dmChannels.some((channel) => last === `/dm/${channel.id}`);
     navigate(stillExists && last ? last : '/dm');
   }
+
+  // Anything unread that is not in a server belongs to the DM button.
+  const dmUnreadTotal = dmChannels.reduce(
+    (total, channel) => total + (unread[channel.id] ?? 0),
+    0,
+  );
 
   const activeChannel =
     (dmMode ? dmChannels : serverChannels).find((channel) => channel.id === activeChannelId) ??
@@ -174,6 +188,8 @@ export function AppShell() {
         onSelectDm={goToDmMode}
         onSelectServer={(serverId) => navigate(`/server/${serverId}`)}
         onCreateServer={() => setShowCreateServer(true)}
+        hasUnread={serverHasUnread}
+        dmUnread={dmUnreadTotal}
       />
 
       <aside className="flex w-60 shrink-0 flex-col border-r border-ink-800 bg-ink-900">
@@ -187,6 +203,7 @@ export function AppShell() {
             memberCount={serverMembers.length}
             onSelect={(channelId) => navigate(`/server/${activeServer.id}/${channelId}`)}
             onCreateChannel={() => setShowCreateChannel(true)}
+            unread={unread}
           />
         ) : (
           <ChannelList
@@ -196,6 +213,7 @@ export function AppShell() {
             onSelect={(channelId) => navigate(`/dm/${channelId}`)}
             onNewDm={() => setShowNewDm(true)}
             onNewGroup={() => setShowNewGroup(true)}
+            unread={unread}
           />
         )}
 

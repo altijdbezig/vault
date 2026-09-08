@@ -92,3 +92,28 @@ export function subscribeToChannel(
     void supabase.removeChannel(channel);
   };
 }
+
+/**
+ * Subscribes to new messages in every channel you are a member of.
+ *
+ * One subscription for the whole app, not one per channel: unread counts need
+ * to hear about channels you are not looking at, and a subscription per
+ * channel would grow with the number of conversations. There is no filter
+ * here, so RLS is what limits this to your own channels.
+ */
+export function subscribeToAllMessages(onInsert: (row: MessageRow) => void): () => void {
+  const channel = supabase
+    .channel('messages:all')
+    .on<MessageRow>(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages' },
+      (payload) => {
+        onInsert(payload.new);
+      },
+    )
+    .subscribe();
+
+  return () => {
+    void supabase.removeChannel(channel);
+  };
+}

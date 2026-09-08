@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
+import { UnreadProvider } from '../../hooks/useUnread';
 import type { ChannelSummary, ServerMember, ServerSummary } from '../../types';
 import { AppShell } from '../AppShell';
 
@@ -18,6 +19,9 @@ const mocks = vi.hoisted(() => ({
   fetchMessages: vi.fn(),
   sendMessage: vi.fn(),
   subscribeToChannel: vi.fn(),
+  subscribeToAllMessages: vi.fn(),
+  fetchUnreadState: vi.fn(),
+  markChannelRead: vi.fn(),
 }));
 
 vi.mock('../../lib/supabase/servers', () => ({
@@ -43,6 +47,13 @@ vi.mock('../../lib/supabase/messages', () => ({
   fetchMessages: mocks.fetchMessages,
   sendMessage: mocks.sendMessage,
   subscribeToChannel: mocks.subscribeToChannel,
+  subscribeToAllMessages: mocks.subscribeToAllMessages,
+}));
+
+vi.mock('../../lib/supabase/unread', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  fetchUnreadState: mocks.fetchUnreadState,
+  markChannelRead: mocks.markChannelRead,
 }));
 
 vi.mock('../../hooks/useAuth', async (importOriginal) => ({
@@ -97,7 +108,9 @@ function renderShell(initialPath: string) {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <BackHandle />
-      <AppShell />
+      <UnreadProvider>
+        <AppShell />
+      </UnreadProvider>
     </MemoryRouter>,
   );
 }
@@ -117,6 +130,9 @@ beforeEach(() => {
   mocks.getPublicKeysForChannel.mockResolvedValue([]);
   mocks.fetchMessages.mockResolvedValue([]);
   mocks.subscribeToChannel.mockReturnValue(() => {});
+  mocks.subscribeToAllMessages.mockReturnValue(() => {});
+  mocks.fetchUnreadState.mockResolvedValue({ counts: {}, channelServers: {} });
+  mocks.markChannelRead.mockResolvedValue(undefined);
 });
 
 function dmButton(): HTMLElement {
