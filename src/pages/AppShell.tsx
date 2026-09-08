@@ -1,27 +1,105 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useLocation, useMatch, useNavigate } from 'react-router-dom';
 import { Button } from '../components/Button';
 import { ChannelList } from '../components/ChannelList';
+import { ChannelSidebar } from '../components/ChannelSidebar';
+import { CreateChannelDialog } from '../components/CreateChannelDialog';
+import { CreateServerDialog } from '../components/CreateServerDialog';
 import { ErrorNotice } from '../components/ErrorNotice';
 import { Fingerprint } from '../components/Fingerprint';
-import { MessageInput } from '../components/MessageInput';
-import { MessageList } from '../components/MessageList';
 import { NewDmDialog } from '../components/NewDmDialog';
+import { ServerRail } from '../components/ServerRail';
 import { useAuth } from '../hooks/useAuth';
 import { useChannels } from '../hooks/useChannels';
-import { useMessages } from '../hooks/useMessages';
+import { useServerChannels, useServers } from '../hooks/useServers';
 import { describeError } from '../lib/errorMessages';
+import { ConversationView } from './ConversationView';
+
+/** Remembers where you were, so "/" can send you back there. */
+const LAST_PATH_KEY = 'vault:last-path';
+
+function readLastPath(): string | null {
+  try {
+    return localStorage.getItem(LAST_PATH_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeLastPath(path: string): void {
+  try {
+    localStorage.setItem(LAST_PATH_KEY, path);
+  } catch {
+    // A blocked storage API is not worth breaking navigation over.
+  }
+}
 
 export function AppShell() {
-  const { profile, signOut, exportEncryptedKey } = useAuth();
-  const { channels, loading: channelsLoading, error: channelsError, startDm } = useChannels();
+  const { user, profile, signOut, exportEncryptedKey } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
+  // Routes: /dm/:channelId, /server/:serverId, /server/:serverId/:channelId
+  const dmMatch = useMatch('/dm/:channelId');
+  const serverMatch = useMatch('/server/:serverId');
+  const serverChannelMatch = useMatch('/server/:serverId/:channelId');
+
+  const activeServerId =
+    serverChannelMatch?.params.serverId ?? serverMatch?.params.serverId ?? null;
+  const activeChannelId =
+    serverChannelMatch?.params.channelId ?? dmMatch?.params.channelId ?? null;
+
+  const { channels: dmChannels, loading: dmLoading, error: dmError, startDm } = useChannels();
+  const { servers, createServer, joinServer } = useServers();
+
+  const activeServer = servers.find((server) => server.id === activeServerId) ?? null;
+  const {
+    channels: serverChannels,
+    members: serverMembers,
+    loading: serverChannelsLoading,
+    error: serverError,
+    canCreateChannel,
+    createChannel,
+  } = useServerChannels(activeServerId, activeServer?.role ?? null);
+
   const [showNewDm, setShowNewDm] = useState(false);
+  const [showCreateServer, setShowCreateServer] = useState(false);
+  const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [showKeyPanel, setShowKeyPanel] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
-  const { messages, loading, error, send, retry, dismiss } = useMessages(activeChannelId);
-  const activeChannel = channels.find((channel) => channel.id === activeChannelId) ?? null;
+  // Remember the last real destination for the "/" redirect.
+  useEffect(() => {
+    if (location.pathname.startsWith('/dm/') || location.pathname.startsWith('/server/')) {
+      writeLastPath(location.pathname);
+    }
+  }, [location.pathname]);
+
+  // "/" goes back to where you were, or stays on the empty state.
+  useEffect(() => {
+    if (location.pathname !== '/') {
+      return;
+    }
+    const last = readLastPath();
+    if (last && last !== '/') {
+      navigate(last, { replace: true });
+    }
+  }, [location.pathname, navigate]);
+
+  // /server/:serverId with no channel: open the first channel of that server.
+  useEffect(() => {
+    if (!serverMatch || serverChannelsLoading || serverChannels.length === 0) {
+      return;
+    }
+    const first = serverChannels[0];
+    if (first) {
+      navigate(`/server/${serverMatch.params.serverId}/${first.id}`, { replace: true });
+    }
+  }, [navigate, serverChannels, serverChannelsLoading, serverMatch]);
+
+  const activeChannelTitle = activeServerId
+    ? (serverChannels.find((channel) => channel.id === activeChannelId)?.displayName ?? 'kanaal')
+    : (dmChannels.find((channel) => channel.id === activeChannelId)?.displayName ?? 'gesprek');
 
   async function handleExport(): Promise<void> {
     setExportError(null);
@@ -41,14 +119,36 @@ export function AppShell() {
 
   return (
     <div className="flex h-full">
+      <ServerRail
+        servers={servers}
+        activeServerId={activeServerId}
+        dmActive={activeServerId === null}
+        onSelectDm={() => navigate('/')}
+        onSelectServer={(serverId) => navigate(`/server/${serverId}`)}
+        onCreateServer={() => setShowCreateServer(true)}
+      />
+
       <aside className="flex w-60 shrink-0 flex-col border-r border-ink-800 bg-ink-900">
-        <ChannelList
-          channels={channels}
-          activeId={activeChannelId}
-          loading={channelsLoading}
-          onSelect={setActiveChannelId}
-          onNewDm={() => setShowNewDm(true)}
-        />
+        {activeServer ? (
+          <ChannelSidebar
+            server={activeServer}
+            channels={serverChannels}
+            activeChannelId={activeChannelId}
+            loading={serverChannelsLoading}
+            canCreateChannel={canCreateChannel}
+            memberCount={serverMembers.length}
+            onSelect={(channelId) => navigate(`/server/${activeServer.id}/${channelId}`)}
+            onCreateChannel={() => setShowCreateChannel(true)}
+          />
+        ) : (
+          <ChannelList
+            channels={dmChannels}
+            activeId={activeChannelId}
+            loading={dmLoading}
+            onSelect={(channelId) => navigate(`/dm/${channelId}`)}
+            onNewDm={() => setShowNewDm(true)}
+          />
+        )}
 
         <div className="border-t border-ink-800 p-2">
           <button
@@ -63,7 +163,7 @@ export function AppShell() {
             <div className="mt-2 rounded border border-ink-800 bg-ink-850 p-2">
               {profile ? <Fingerprint value={profile.fingerprint} /> : null}
               <p className="mt-2 text-xs leading-relaxed text-ink-500">
-                Vergelijk deze vingerafdruk buiten Vault om met je gesprekspartner.
+                Vergelijk deze vingerafdruk buiten Vault om met je gesprekspartners.
               </p>
               <div className="mt-2 flex flex-col gap-1">
                 <Button
@@ -91,56 +191,55 @@ export function AppShell() {
         </div>
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col bg-ink-950">
-        {activeChannelId ? (
-          <>
-            <header className="flex items-center gap-2 border-b border-ink-800 px-4 py-2.5">
-              <span className="text-ink-500">@</span>
-              <h1 className="truncate text-sm font-semibold text-ink-100">
-                {activeChannel?.displayName ?? 'gesprek'}
-              </h1>
-              <span className="ml-auto text-xs text-ink-500">end-to-end versleuteld</span>
-            </header>
-
-            <div className="px-4 pt-2">
-              <ErrorNotice message={error ?? channelsError} />
-            </div>
-
-            <MessageList
-              messages={messages}
-              loading={loading}
-              onRetry={(localId) => {
-                void retry(localId);
-              }}
-              onDismiss={dismiss}
-            />
-
-            <MessageInput
-              onSend={(plaintext) => {
-                void send(plaintext);
-              }}
-              placeholder={`Bericht aan ${activeChannel?.displayName ?? ''}`}
-            />
-          </>
-        ) : (
-          <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-ink-500">
-            <div>
-              <p>Kies links een gesprek, of begin er een nieuwe.</p>
-              <p className="mt-2 text-xs">
-                Berichten worden in je browser versleuteld. De server ziet alleen ciphertext.
-              </p>
-            </div>
+      {activeChannelId ? (
+        <ConversationView
+          key={activeChannelId}
+          channelId={activeChannelId}
+          title={activeChannelTitle}
+          prefix={activeServerId ? '#' : '@'}
+          currentUserId={user?.id ?? null}
+        />
+      ) : (
+        <section className="flex flex-1 items-center justify-center bg-ink-950 p-6 text-center text-sm text-ink-500">
+          <div>
+            <ErrorNotice message={dmError ?? serverError} />
+            <p className="mt-2">
+              {activeServerId
+                ? 'Deze server heeft nog geen kanaal.'
+                : 'Kies links een gesprek, of begin er een nieuwe.'}
+            </p>
+            <p className="mt-2 text-xs">
+              Berichten worden in je browser versleuteld. De server ziet alleen ciphertext.
+            </p>
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
       {showNewDm ? (
         <NewDmDialog
           onClose={() => setShowNewDm(false)}
           onStart={startDm}
-          onStarted={setActiveChannelId}
+          onStarted={(channelId) => navigate(`/dm/${channelId}`)}
+        />
+      ) : null}
+
+      {showCreateServer ? (
+        <CreateServerDialog
+          onClose={() => setShowCreateServer(false)}
+          onCreate={createServer}
+          onJoin={joinServer}
+          onCreated={(serverId) => navigate(`/server/${serverId}`)}
+        />
+      ) : null}
+
+      {showCreateChannel && activeServer ? (
+        <CreateChannelDialog
+          onClose={() => setShowCreateChannel(false)}
+          onCreate={createChannel}
+          onCreated={(channelId) => navigate(`/server/${activeServer.id}/${channelId}`)}
         />
       ) : null}
     </div>
   );
+
 }

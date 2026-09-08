@@ -88,7 +88,8 @@ interface ChannelMemberRow {
   user_id: string;
   profiles: {
     username: string;
-    public_key: string;
+    public_key: string | null;
+    key_fingerprint: string | null;
   };
 }
 
@@ -101,7 +102,7 @@ interface ChannelMemberRow {
 export async function getPublicKeysForChannel(channelId: string): Promise<ChannelMemberKey[]> {
   const { data, error } = await supabase
     .from('channel_members')
-    .select('user_id, profiles!inner(username, public_key)')
+    .select('user_id, profiles!inner(username, public_key, key_fingerprint)')
     .eq('channel_id', channelId)
     .returns<ChannelMemberRow[]>();
 
@@ -112,6 +113,9 @@ export async function getPublicKeysForChannel(channelId: string): Promise<Channe
   return data.map((row) => ({
     userId: row.user_id,
     username: row.profiles.username,
-    publicKey: row.profiles.public_key,
+    // An empty string is as unusable as null; normalise both away here so
+    // callers only have to check for null.
+    publicKey: row.profiles.public_key?.trim() ? row.profiles.public_key : null,
+    fingerprint: row.profiles.key_fingerprint ?? null,
   }));
 }

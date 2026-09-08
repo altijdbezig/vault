@@ -2,6 +2,7 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrivateKey } from 'openpgp';
 import {
+  decryptMessage,
   encryptMessage,
   generateKeyPair,
   lockSession,
@@ -91,8 +92,13 @@ beforeAll(async () => {
     makeIdentity('user-c', 'buitenstaander'),
   ]);
   members = [
-    { userId: alice.userId, username: alice.username, publicKey: alice.publicKey },
-    { userId: bob.userId, username: bob.username, publicKey: bob.publicKey },
+    {
+      userId: alice.userId,
+      username: alice.username,
+      publicKey: alice.publicKey,
+      fingerprint: null,
+    },
+    { userId: bob.userId, username: bob.username, publicKey: bob.publicKey, fingerprint: null },
   ];
 });
 
@@ -350,5 +356,92 @@ describe('decryption', () => {
 
     await waitFor(() => expect(result.current.messages[0]?.text).toBe('ik ben jayden'));
     expect(result.current.messages[0]?.signatureValid).toBe(false);
+  });
+});
+
+describe('server channels', () => {
+  /**
+   * A server channel is the same abstraction as a DM, but its member list can
+   * change. These two cases are what that costs.
+   */
+  it('skips members without a public key and reports who they are', async () => {
+    const halfCreatedProfile: ChannelMemberKey = {
+      userId: 'user-d',
+      username: 'zonder-sleutel',
+      publicKey: null,
+      fingerprint: null,
+    };
+    mocks.getPublicKeysForChannel.mockResolvedValue([
+      ...members,
+      { userId: carol.userId, username: carol.username, publicKey: carol.publicKey, fingerprint: null },
+      halfCreatedProfile,
+    ]);
+    mocks.sendMessage.mockImplementation(async (channelId: string, ciphertext: string) => ({
+      id: 'm-sent',
+      channel_id: channelId,
+      sender_id: alice.userId,
+      ciphertext,
+      created_at: '2026-09-08T11:00:00.000Z',
+      deleted_at: null,
+    }));
+
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // The UI has to be able to name them; silently dropping them is not ok.
+    expect(result.current.membersWithoutKey.map((member) => member.username)).toEqual([
+      'zonder-sleutel',
+    ]);
+
+    await act(async () => {
+      await result.current.send('bericht aan het kanaal');
+    });
+
+    // The send still goes through for everyone who does have a key.
+    await waitFor(() => expect(result.current.messages[0]?.status).toBe('sent'));
+    expect(result.current.error).toBeNull();
+
+    const ciphertext = mocks.sendMessage.mock.calls[0]?.[1] as string;
+    const readableByCarol = await decryptMessage({
+      ciphertext,
+      privateKey: carol.privateKey,
+    });
+    expect(readableByCarol.plaintext).toBe('bericht aan het kanaal');
+  });
+
+  it('shows a placeholder for messages sent before a member joined', async () => {
+    // Carol is the newcomer: she is in the channel now, but the first message
+    // was encrypted before she was.
+    const beforeCarol = await makeRow(
+      'm1',
+      alice,
+      'gesprek van voor haar tijd',
+      [alice, bob],
+      '2026-09-08T08:00:00.000Z',
+    );
+    const afterCarol = await makeRow(
+      'm2',
+      alice,
+      'welkom carol',
+      [alice, bob, carol],
+      '2026-09-08T09:00:00.000Z',
+    );
+
+    mocks.fetchMessages.mockResolvedValue([beforeCarol, afterCarol]);
+    mocks.getPublicKeysForChannel.mockResolvedValue([
+      ...members,
+      { userId: carol.userId, username: carol.username, publicKey: carol.publicKey, fingerprint: null },
+    ]);
+    setUnlockedKey(carol.privateKey);
+
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+
+    await waitFor(() => expect(result.current.messages).toHaveLength(2));
+    await waitFor(() => expect(result.current.messages[1]?.text).toBe('welkom carol'));
+
+    // Not an error, not a crash: exactly the designed behaviour.
+    expect(result.current.messages[0]?.unreadable).toBe(true);
+    expect(result.current.messages[0]?.text).toBeNull();
+    expect(result.current.error).toBeNull();
   });
 });

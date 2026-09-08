@@ -45,6 +45,8 @@ interface PendingMessage {
 export interface UseMessagesResult {
   messages: DisplayMessage[];
   members: ChannelMemberKey[];
+  /** Members we cannot encrypt to, because their profile has no public key. */
+  membersWithoutKey: ChannelMemberKey[];
   loading: boolean;
   /** Set when something went wrong that the user should see. */
   error: string | null;
@@ -171,7 +173,7 @@ export function useMessages(channelId: string | null): UseMessagesResult {
         const result = await decryptMessage({
           ciphertext: row.ciphertext,
           privateKey: getUnlockedKey(),
-          senderPublicKey: sender?.publicKey,
+          senderPublicKey: sender?.publicKey ?? undefined,
         });
         return {
           text: result.plaintext,
@@ -245,13 +247,24 @@ export function useMessages(channelId: string | null): UseMessagesResult {
         setMembers(channelMembers);
         membersRef.current = channelMembers;
 
-        if (currentUserId && !channelMembers.some((member) => member.userId === currentUserId)) {
+        // A member whose profile has no public key cannot be encrypted to.
+        // Skip them here rather than letting encryptMessage fail on the whole
+        // message; the UI shows who is being left out.
+        const recipients = channelMembers.filter(
+          (member): member is ChannelMemberKey & { publicKey: string } => member.publicKey !== null,
+        );
+
+        if (currentUserId && !recipients.some((member) => member.userId === currentUserId)) {
           throw new MissingSelfKeyError();
         }
 
+        // Scaling limit: OpenPGP wraps the session key once per recipient, so
+        // the ciphertext grows linearly with the number of members. Fine for a
+        // DM or a small channel; a channel with hundreds of members will need
+        // a different approach (sender keys, or per-channel key rotation).
         const ciphertext = await encryptMessage({
           plaintext,
-          recipientPublicKeys: channelMembers.map((member) => member.publicKey),
+          recipientPublicKeys: recipients.map((member) => member.publicKey),
           signingKey: getUnlockedKey(),
         });
 
@@ -372,5 +385,10 @@ export function useMessages(channelId: string | null): UseMessagesResult {
     // never changes identity.
   }, [rows, pending, members, currentUserId, decryptedVersion]);
 
-  return { messages, members, loading, error, send, retry, dismiss };
+  const membersWithoutKey = useMemo(
+    () => members.filter((member) => member.publicKey === null),
+    [members],
+  );
+
+  return { messages, members, membersWithoutKey, loading, error, send, retry, dismiss };
 }

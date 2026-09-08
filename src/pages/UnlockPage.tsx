@@ -63,7 +63,7 @@ export function UnlockPage() {
         {needsKeyImport ? (
           <div className="flex flex-col gap-2">
             <label
-              htmlFor="key-import"
+              htmlFor="key-file"
               className="text-xs font-semibold uppercase tracking-wide text-ink-300"
             >
               Sleutelbestand
@@ -77,6 +77,12 @@ export function UnlockPage() {
               }}
               className="text-xs text-ink-300 file:mr-3 file:rounded file:border-0 file:bg-ink-800 file:px-3 file:py-1.5 file:text-xs file:text-ink-100"
             />
+            <label
+              htmlFor="key-import"
+              className="mt-1 text-xs font-semibold uppercase tracking-wide text-ink-300"
+            >
+              of plak je sleutel
+            </label>
             <textarea
               id="key-import"
               rows={5}
@@ -105,8 +111,9 @@ export function UnlockPage() {
         </Button>
 
         <p className="text-center text-xs leading-relaxed text-ink-500">
-          Je bent nog ingelogd, maar je sleutel staat alleen in het geheugen van deze
-          pagina. Na een refresh moet je hem opnieuw ontgrendelen.
+          {needsKeyImport
+            ? 'Je bent nog ingelogd, maar op dit apparaat staat geen sleutel. Importeer je back-upbestand om verder te gaan.'
+            : 'Je bent nog ingelogd, maar je sleutel staat alleen in het geheugen van deze pagina. Na een refresh moet je hem opnieuw ontgrendelen.'}
         </p>
       </form>
     </AuthCard>
