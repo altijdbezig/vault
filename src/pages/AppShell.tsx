@@ -13,6 +13,7 @@ import { NewGroupDialog } from '../components/NewGroupDialog';
 import { ServerRail } from '../components/ServerRail';
 import { useAuth } from '../hooks/useAuth';
 import { useChannels } from '../hooks/useChannels';
+import { useIsWideScreen } from '../hooks/useMediaQuery';
 import { useServerChannels, useServers } from '../hooks/useServers';
 import { useUnread } from '../hooks/useUnread';
 import { describeError } from '../lib/errorMessages';
@@ -71,6 +72,7 @@ export function AppShell() {
   } = useChannels();
   const { servers, createServer, joinServer } = useServers();
   const { counts: unread, serverHasUnread, setActiveChannel } = useUnread();
+  const wide = useIsWideScreen();
 
   const activeServer = servers.find((server) => server.id === activeServerId) ?? null;
   const {
@@ -88,6 +90,8 @@ export function AppShell() {
   const [showCreateServer, setShowCreateServer] = useState(false);
   const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [showKeyPanel, setShowKeyPanel] = useState(false);
+  /** Mobile only: the server rail is a drawer there, not a column. */
+  const [showRail, setShowRail] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
   // Remember the last real destination for the "/" redirect.
@@ -119,13 +123,17 @@ export function AppShell() {
   // reload. useServerChannels only reports channels once they belong to the
   // server in the URL, so this can no longer fire with the previous server's
   // list and strand the user on a channel from somewhere else.
+  //
+  // Only on a wide screen. On a phone one column is on screen at a time, so
+  // opening a server has to show its channel list; jumping straight into a
+  // channel would leave the back button nowhere to go.
   const firstChannelId = serverChannels[0]?.id ?? null;
   useEffect(() => {
-    if (!serverMatch || serverChannelsLoading || !firstChannelId) {
+    if (!wide || !serverMatch || serverChannelsLoading || !firstChannelId) {
       return;
     }
     navigate(`/server/${serverMatch.params.serverId}/${firstChannelId}`, { replace: true });
-  }, [navigate, firstChannelId, serverChannelsLoading, serverMatch]);
+  }, [navigate, firstChannelId, serverChannelsLoading, serverMatch, wide]);
 
   // The provider needs to know what is on screen to stop counting it as
   // unread and to move the read marker.
@@ -155,6 +163,11 @@ export function AppShell() {
   const activeChannelType: ChannelType = activeChannel?.type ?? (dmMode ? 'dm' : 'text');
   const inGroup = activeChannelType === 'group';
 
+  /** Mobile back button: from a conversation to the list it came from. */
+  function goToList(): void {
+    navigate(activeServerId ? `/server/${activeServerId}` : '/dm');
+  }
+
   async function handleLeaveGroup(): Promise<void> {
     if (!activeChannelId) {
       return;
@@ -180,19 +193,58 @@ export function AppShell() {
   }
 
   return (
-    <div className="flex h-full">
-      <ServerRail
-        servers={servers}
-        activeServerId={activeServerId}
-        dmActive={dmMode}
-        onSelectDm={goToDmMode}
-        onSelectServer={(serverId) => navigate(`/server/${serverId}`)}
-        onCreateServer={() => setShowCreateServer(true)}
-        hasUnread={serverHasUnread}
-        dmUnread={dmUnreadTotal}
-      />
+    <div className="relative flex h-full overflow-hidden">
+      {/* Tapping outside the rail drawer closes it. Mobile only. */}
+      {showRail ? (
+        <button
+          type="button"
+          aria-label="Serverlijst sluiten"
+          onClick={() => setShowRail(false)}
+          className="absolute inset-0 z-20 bg-black/60 md:hidden"
+        />
+      ) : null}
 
-      <aside className="flex w-60 shrink-0 flex-col border-r border-ink-800 bg-ink-900">
+      <div
+        className={`${showRail ? 'absolute inset-y-0 left-0 z-30 flex' : 'hidden'} md:static md:z-auto md:flex`}
+      >
+        <ServerRail
+          servers={servers}
+          activeServerId={activeServerId}
+          dmActive={dmMode}
+          onSelectDm={() => {
+            setShowRail(false);
+            goToDmMode();
+          }}
+          onSelectServer={(serverId) => {
+            setShowRail(false);
+            navigate(`/server/${serverId}`);
+          }}
+          onCreateServer={() => {
+            setShowRail(false);
+            setShowCreateServer(true);
+          }}
+          hasUnread={serverHasUnread}
+          dmUnread={dmUnreadTotal}
+        />
+      </div>
+
+      <aside
+        className={`${activeChannelId ? 'hidden md:flex' : 'flex'} w-full flex-col border-r border-ink-800 bg-ink-900 md:w-60 md:shrink-0`}
+      >
+        <button
+          type="button"
+          onClick={() => setShowRail(true)}
+          className="flex min-h-11 items-center gap-2 border-b border-ink-800 px-3 text-left text-sm text-ink-300 hover:bg-ink-850 md:hidden"
+        >
+          <span aria-hidden="true">☰</span> Servers
+          {dmUnreadTotal > 0 || servers.some((server) => serverHasUnread(server.id)) ? (
+            <span
+              aria-label="ongelezen elders"
+              className="h-2 w-2 rounded-full bg-accent-500"
+            />
+          ) : null}
+        </button>
+
         {activeServer ? (
           <ChannelSidebar
             server={activeServer}
@@ -221,7 +273,7 @@ export function AppShell() {
           <button
             type="button"
             onClick={() => setShowKeyPanel((open) => !open)}
-            className="w-full truncate rounded px-2 py-1.5 text-left text-sm text-ink-300 hover:bg-ink-850"
+            className="min-h-11 w-full truncate rounded px-2 py-1.5 text-left text-sm text-ink-300 hover:bg-ink-850"
           >
             {profile?.username} <span className="text-ink-500">· sleutel</span>
           </button>
@@ -265,6 +317,7 @@ export function AppShell() {
           title={activeChannelTitle}
           channelType={activeChannelType}
           currentUserId={user?.id ?? null}
+          onBack={goToList}
           onAddMember={inGroup ? () => setShowAddMember(true) : undefined}
           onLeaveGroup={
             inGroup
@@ -275,7 +328,7 @@ export function AppShell() {
           }
         />
       ) : (
-        <section className="flex flex-1 items-center justify-center bg-ink-950 p-6 text-center text-sm text-ink-500">
+        <section className="hidden flex-1 items-center justify-center bg-ink-950 p-6 text-center text-sm text-ink-500 md:flex">
           <div>
             <ErrorNotice message={dmError ?? serverError} />
             <p className="mt-2">

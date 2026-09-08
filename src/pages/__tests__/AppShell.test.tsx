@@ -271,3 +271,62 @@ describe('A2 — one fetch per channel switch', () => {
     expect(mocks.getPublicKeysForChannel).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('C — one column at a time on a phone', () => {
+  /** Puts the window below the md breakpoint and lets the app react. */
+  function narrow(): void {
+    window.innerWidth = 390;
+    window.dispatchEvent(new Event('resize'));
+  }
+
+  function wide(): void {
+    window.innerWidth = 1024;
+    window.dispatchEvent(new Event('resize'));
+  }
+
+  afterEach(wide);
+
+  it('shows the channel list of a server instead of jumping into its first channel', async () => {
+    narrow();
+    renderShell('/dm');
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Gesprekken' })).toBeTruthy());
+
+    // The rail is a drawer here, so it has to be opened first.
+    fireEvent.click(screen.getByRole('button', { name: /Servers/ }));
+    fireEvent.click(serverButton('Vault HQ'));
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Kanalen' })).toBeTruthy());
+    await settle();
+
+    // On a phone the channel list is the destination; opening a channel is a
+    // second tap, and that is what the back button goes back to.
+    expect(mocks.fetchMessages).not.toHaveBeenCalled();
+  });
+
+  it('goes back to the list from a conversation', async () => {
+    narrow();
+    renderShell('/server/srv-1/chan-1a');
+
+    await waitFor(() => expect(screen.getByPlaceholderText('Bericht aan #algemeen')).toBeTruthy());
+
+    // Which of the two columns is on screen is decided in CSS, which jsdom
+    // does not apply, so this checks the navigation underneath it: back lands
+    // on the server without a channel, and the conversation is unmounted.
+    fireEvent.click(screen.getByLabelText('Terug naar de lijst'));
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Kanalen' })).toBeTruthy());
+    expect(screen.queryByPlaceholderText('Bericht aan #algemeen')).toBeNull();
+  });
+
+  it('still opens the first channel of a server on a wide screen', async () => {
+    renderShell('/dm');
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Gesprekken' })).toBeTruthy());
+
+    fireEvent.click(serverButton('Vault HQ'));
+
+    // The opposite of the phone case: with room for both columns, landing on
+    // an empty pane would be a wasted click.
+    await waitFor(() => expect(mocks.fetchMessages).toHaveBeenCalledWith('chan-1a'));
+    expect(screen.getByRole('heading', { name: 'Kanalen' })).toBeTruthy();
+  });
+});

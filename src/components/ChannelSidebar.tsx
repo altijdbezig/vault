@@ -42,7 +42,7 @@ export function ChannelSidebar({
             type="button"
             onClick={onCreateChannel}
             title="Kanaal aanmaken"
-            className="rounded px-1.5 text-lg leading-none text-ink-500 hover:bg-ink-800 hover:text-ink-100"
+            className="flex h-11 w-11 items-center justify-center rounded text-lg leading-none text-ink-500 hover:bg-ink-800 hover:text-ink-100"
           >
             +
           </button>

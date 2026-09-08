@@ -14,9 +14,28 @@
 }
 
 html,
-body,
+body {
+  height: 100%;
+}
+
+/*
+ * dvh, not vh.
+ *
+ * On iOS, vh is the height of the viewport with the browser chrome hidden, so
+ * a 100vh app puts its message field underneath the address bar and, once the
+ * on-screen keyboard opens, underneath the keyboard. dvh follows the viewport
+ * as it actually is. The percentage above it is the fallback for anything that
+ * does not know dvh yet.
+ */
 #root {
   height: 100%;
+  height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Never let a page rubber-band: the conversation does its own scrolling. */
+body {
+  overscroll-behavior: none;
 }
 
 body {

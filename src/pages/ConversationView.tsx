@@ -3,6 +3,7 @@ import { ErrorNotice } from '../components/ErrorNotice';
 import { MemberList } from '../components/MemberList';
 import { MessageInput } from '../components/MessageInput';
 import { MessageList } from '../components/MessageList';
+import { useIsWideScreen } from '../hooks/useMediaQuery';
 import { useMessages } from '../hooks/useMessages';
 import { channelPrefix } from '../lib/channelName';
 import type { ChannelType } from '../types';
@@ -12,6 +13,8 @@ interface ConversationViewProps {
   title: string;
   channelType: ChannelType;
   currentUserId: string | null;
+  /** Mobile only: back to the list this conversation came from. */
+  onBack: () => void;
   /** Groups only: adding someone, and getting out. */
   onAddMember?: () => void;
   onLeaveGroup?: () => void;
@@ -30,6 +33,7 @@ export function ConversationView({
   title,
   channelType,
   currentUserId,
+  onBack,
   onAddMember,
   onLeaveGroup,
 }: ConversationViewProps) {
@@ -46,17 +50,28 @@ export function ConversationView({
     retry,
     dismiss,
   } = useMessages(channelId);
-  const [showMembers, setShowMembers] = useState(true);
+  const wide = useIsWideScreen();
+  // On a phone the member list is a drawer over the conversation, so it starts
+  // closed; on a wide screen it is a column that costs nothing.
+  const [showMembers, setShowMembers] = useState(wide);
   const [confirmLeave, setConfirmLeave] = useState(false);
 
   const readerCount = members.length - membersWithoutKey.length;
   const isGroup = channelType === 'group';
 
   return (
-    <div className="flex min-w-0 flex-1">
+    <div className="relative flex min-w-0 flex-1">
       <section className="flex min-w-0 flex-1 flex-col bg-ink-950">
-        <header className="border-b border-ink-800 px-4 py-2.5">
+        <header className="border-b border-ink-800 px-2 py-2 md:px-4 md:py-2.5">
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onBack}
+              aria-label="Terug naar de lijst"
+              className="-ml-1 flex h-11 w-9 shrink-0 items-center justify-center rounded text-ink-300 hover:bg-ink-800 md:hidden"
+            >
+              <span aria-hidden="true">‹</span>
+            </button>
             <span aria-hidden="true" className="text-ink-500">
               {channelPrefix(channelType)}
             </span>
@@ -159,7 +174,21 @@ export function ConversationView({
         />
       </section>
 
-      {showMembers ? <MemberList members={members} currentUserId={currentUserId} /> : null}
+      {showMembers ? (
+        <>
+          {/* On a phone the list slides over the conversation instead of
+              squeezing it into a third of the screen. */}
+          <button
+            type="button"
+            aria-label="Ledenlijst sluiten"
+            onClick={() => setShowMembers(false)}
+            className="absolute inset-0 z-20 bg-black/60 md:hidden"
+          />
+          <div className="absolute inset-y-0 right-0 z-30 flex w-72 max-w-[85%] md:static md:z-auto md:w-auto md:max-w-none">
+            <MemberList members={members} currentUserId={currentUserId} />
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

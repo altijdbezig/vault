@@ -61,12 +61,44 @@ export function UnlockPage() {
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         {needsKeyImport ? (
+          /*
+           * Pasting comes first, not the file picker.
+           *
+           * On a phone a .asc file is often not reachable at all: iOS hands
+           * the Files app a type it does not preview, and a key that arrived
+           * through a messaging app usually only exists as text on the
+           * clipboard. Pasting works everywhere, so it is the main route and
+           * the file picker is the alternative.
+           */
           <div className="flex flex-col gap-2">
             <label
-              htmlFor="key-file"
+              htmlFor="key-import"
               className="text-xs font-semibold uppercase tracking-wide text-ink-300"
             >
-              Sleutelbestand
+              Plak je sleutel
+            </label>
+            <textarea
+              id="key-import"
+              rows={6}
+              required
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              value={armored}
+              onChange={(event) => setArmored(event.target.value)}
+              placeholder="-----BEGIN PGP PRIVATE KEY BLOCK-----"
+              className="rounded border border-ink-700 bg-ink-900 px-3 py-2 font-mono text-sm text-ink-100 outline-none placeholder:text-ink-500 focus:border-accent-500"
+            />
+            <p className="text-xs leading-relaxed text-ink-500">
+              Open je back-upbestand, kopieer alles inclusief de BEGIN- en
+              END-regels, en plak het hierboven.
+            </p>
+
+            <label
+              htmlFor="key-file"
+              className="mt-2 text-xs font-semibold uppercase tracking-wide text-ink-300"
+            >
+              of kies het bestand
             </label>
             <input
               id="key-file"
@@ -75,22 +107,7 @@ export function UnlockPage() {
               onChange={(event) => {
                 void handleFile(event);
               }}
-              className="text-xs text-ink-300 file:mr-3 file:rounded file:border-0 file:bg-ink-800 file:px-3 file:py-1.5 file:text-xs file:text-ink-100"
-            />
-            <label
-              htmlFor="key-import"
-              className="mt-1 text-xs font-semibold uppercase tracking-wide text-ink-300"
-            >
-              of plak je sleutel
-            </label>
-            <textarea
-              id="key-import"
-              rows={5}
-              required
-              value={armored}
-              onChange={(event) => setArmored(event.target.value)}
-              placeholder="-----BEGIN PGP PRIVATE KEY BLOCK-----"
-              className="rounded border border-ink-700 bg-ink-900 px-3 py-2 font-mono text-xs text-ink-100 outline-none placeholder:text-ink-500 focus:border-accent-500"
+              className="text-xs text-ink-300 file:mr-3 file:min-h-11 file:rounded file:border-0 file:bg-ink-800 file:px-3 file:text-xs file:text-ink-100"
             />
           </div>
         ) : null}
