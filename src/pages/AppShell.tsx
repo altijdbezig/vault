@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useMatch, useNavigate } from 'react-router-dom';
+import { AddGroupMemberDialog } from '../components/AddGroupMemberDialog';
 import { Button } from '../components/Button';
 import { ChannelList } from '../components/ChannelList';
 import { ChannelSidebar } from '../components/ChannelSidebar';
@@ -8,11 +9,13 @@ import { CreateServerDialog } from '../components/CreateServerDialog';
 import { ErrorNotice } from '../components/ErrorNotice';
 import { Fingerprint } from '../components/Fingerprint';
 import { NewDmDialog } from '../components/NewDmDialog';
+import { NewGroupDialog } from '../components/NewGroupDialog';
 import { ServerRail } from '../components/ServerRail';
 import { useAuth } from '../hooks/useAuth';
 import { useChannels } from '../hooks/useChannels';
 import { useServerChannels, useServers } from '../hooks/useServers';
 import { describeError } from '../lib/errorMessages';
+import type { ChannelType } from '../types';
 import { ConversationView } from './ConversationView';
 
 /** Remembers where you were, so "/" can send you back there. */
@@ -56,7 +59,15 @@ export function AppShell() {
     serverChannelMatch?.params.channelId ?? dmMatch?.params.channelId ?? null;
   const dmMode = activeServerId === null;
 
-  const { channels: dmChannels, loading: dmLoading, error: dmError, startDm } = useChannels();
+  const {
+    channels: dmChannels,
+    loading: dmLoading,
+    error: dmError,
+    startDm,
+    startGroup,
+    addToGroup,
+    leaveGroup,
+  } = useChannels();
   const { servers, createServer, joinServer } = useServers();
 
   const activeServer = servers.find((server) => server.id === activeServerId) ?? null;
@@ -70,6 +81,8 @@ export function AppShell() {
   } = useServerChannels(activeServerId, activeServer?.role ?? null);
 
   const [showNewDm, setShowNewDm] = useState(false);
+  const [showNewGroup, setShowNewGroup] = useState(false);
+  const [showAddMember, setShowAddMember] = useState(false);
   const [showCreateServer, setShowCreateServer] = useState(false);
   const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [showKeyPanel, setShowKeyPanel] = useState(false);
@@ -120,9 +133,21 @@ export function AppShell() {
     navigate(stillExists && last ? last : '/dm');
   }
 
-  const activeChannelTitle = activeServerId
-    ? (serverChannels.find((channel) => channel.id === activeChannelId)?.displayName ?? 'kanaal')
-    : (dmChannels.find((channel) => channel.id === activeChannelId)?.displayName ?? 'gesprek');
+  const activeChannel =
+    (dmMode ? dmChannels : serverChannels).find((channel) => channel.id === activeChannelId) ??
+    null;
+  const activeChannelTitle =
+    activeChannel?.displayName ?? (dmMode ? 'gesprek' : 'kanaal');
+  const activeChannelType: ChannelType = activeChannel?.type ?? (dmMode ? 'dm' : 'text');
+  const inGroup = activeChannelType === 'group';
+
+  async function handleLeaveGroup(): Promise<void> {
+    if (!activeChannelId) {
+      return;
+    }
+    await leaveGroup(activeChannelId);
+    navigate('/dm');
+  }
 
   async function handleExport(): Promise<void> {
     setExportError(null);
@@ -170,6 +195,7 @@ export function AppShell() {
             loading={dmLoading}
             onSelect={(channelId) => navigate(`/dm/${channelId}`)}
             onNewDm={() => setShowNewDm(true)}
+            onNewGroup={() => setShowNewGroup(true)}
           />
         )}
 
@@ -219,8 +245,16 @@ export function AppShell() {
           key={activeChannelId}
           channelId={activeChannelId}
           title={activeChannelTitle}
-          prefix={dmMode ? '@' : '#'}
+          channelType={activeChannelType}
           currentUserId={user?.id ?? null}
+          onAddMember={inGroup ? () => setShowAddMember(true) : undefined}
+          onLeaveGroup={
+            inGroup
+              ? () => {
+                  void handleLeaveGroup();
+                }
+              : undefined
+          }
         />
       ) : (
         <section className="flex flex-1 items-center justify-center bg-ink-950 p-6 text-center text-sm text-ink-500">
@@ -245,6 +279,22 @@ export function AppShell() {
           onClose={() => setShowNewDm(false)}
           onStart={startDm}
           onStarted={(channelId) => navigate(`/dm/${channelId}`)}
+        />
+      ) : null}
+
+      {showNewGroup ? (
+        <NewGroupDialog
+          onClose={() => setShowNewGroup(false)}
+          onCreate={startGroup}
+          onCreated={(channelId) => navigate(`/dm/${channelId}`)}
+        />
+      ) : null}
+
+      {showAddMember && activeChannelId ? (
+        <AddGroupMemberDialog
+          groupName={activeChannelTitle}
+          onClose={() => setShowAddMember(false)}
+          onAdd={(username) => addToGroup(activeChannelId, username)}
         />
       ) : null}
 

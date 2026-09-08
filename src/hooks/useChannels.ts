@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { createDm, listMyChannels } from '../lib/supabase/channels';
+import {
+  addMemberToGroup,
+  createDm,
+  createGroup,
+  leaveGroup as leaveGroupRow,
+  listMyChannels,
+} from '../lib/supabase/channels';
 import { getProfileByUsername } from '../lib/supabase/profiles';
 import type { ChannelSummary } from '../types';
 import { useAuth } from './useAuth';
@@ -18,6 +24,11 @@ export interface UseChannelsResult {
   reload(): Promise<void>;
   /** Opens (or creates) the DM with a username and returns the channel id. */
   startDm(username: string): Promise<string>;
+  /** Creates a group with the given usernames and returns the channel id. */
+  startGroup(name: string, usernames: string[]): Promise<string>;
+  /** Adds someone to a group. They cannot read anything sent before now. */
+  addToGroup(channelId: string, username: string): Promise<void>;
+  leaveGroup(channelId: string): Promise<void>;
 }
 
 export function useChannels(): UseChannelsResult {
@@ -42,6 +53,22 @@ export function useChannels(): UseChannelsResult {
     void reload();
   }, [reload]);
 
+  /** Username to user id, with the two mistakes people actually make. */
+  const resolveUser = useCallback(
+    async (username: string): Promise<string> => {
+      const trimmed = username.trim();
+      const profile = await getProfileByUsername(trimmed);
+      if (!profile) {
+        throw new UserNotFoundError(trimmed);
+      }
+      if (profile.id === user?.id) {
+        throw new Error('Je staat er zelf al in.');
+      }
+      return profile.id;
+    },
+    [user],
+  );
+
   const startDm = useCallback(
     async (username: string): Promise<string> => {
       const trimmed = username.trim();
@@ -60,5 +87,37 @@ export function useChannels(): UseChannelsResult {
     [reload, user],
   );
 
-  return { channels, loading, error, reload, startDm };
+  const startGroup = useCallback(
+    async (name: string, usernames: string[]): Promise<string> => {
+      // Resolved one by one so an unknown username names itself in the error
+      // instead of failing the whole group anonymously.
+      const userIds: string[] = [];
+      for (const username of usernames) {
+        userIds.push(await resolveUser(username));
+      }
+
+      const channelId = await createGroup(name, userIds);
+      await reload();
+      return channelId;
+    },
+    [reload, resolveUser],
+  );
+
+  const addToGroup = useCallback(
+    async (channelId: string, username: string): Promise<void> => {
+      await addMemberToGroup(channelId, await resolveUser(username));
+      await reload();
+    },
+    [reload, resolveUser],
+  );
+
+  const leaveGroup = useCallback(
+    async (channelId: string): Promise<void> => {
+      await leaveGroupRow(channelId);
+      await reload();
+    },
+    [reload],
+  );
+
+  return { channels, loading, error, reload, startDm, startGroup, addToGroup, leaveGroup };
 }

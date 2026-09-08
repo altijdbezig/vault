@@ -11,6 +11,27 @@
  * channel handles.
  */
 
+import type { ChannelType } from '../types';
+
+/**
+ * The glyph in front of a channel everywhere it is listed or titled.
+ *
+ * One function so the conversation list, the sidebar and the conversation
+ * header cannot drift apart. A group gets its own mark rather than borrowing
+ * the DM's "@": at a glance you need to know whether what you type goes to one
+ * person or to five.
+ */
+export function channelPrefix(type: ChannelType): string {
+  switch (type) {
+    case 'dm':
+      return '@';
+    case 'group':
+      return '👥';
+    case 'text':
+      return '#';
+  }
+}
+
 /** The name normalised to nothing at all, so there is nothing to create. */
 export class EmptyChannelNameError extends Error {
   constructor() {
