@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run typecheck && vitest run && vite build",
     "preview": "vite preview",
     "test": "vitest",
     "ci": "vitest run",

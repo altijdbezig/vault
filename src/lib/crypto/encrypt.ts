@@ -1,7 +1,7 @@
-import { createMessage, decrypt, encrypt, readMessage } from 'openpgp';
 import type { PrivateKey, PublicKey } from 'openpgp';
 import { KeyLockedError, MissingSelfKeyError, NotARecipientError } from './errors';
 import { getFingerprint, readPublicKey } from './keys';
+import { loadOpenPGP } from './openpgp';
 
 export interface EncryptMessageOptions {
   plaintext: string;
@@ -45,6 +45,7 @@ export async function encryptMessage(opts: EncryptMessageOptions): Promise<strin
     throw new KeyLockedError();
   }
 
+  const { createMessage, encrypt } = await loadOpenPGP();
   const parsedKeys = await Promise.all(opts.recipientPublicKeys.map(readPublicKey));
 
   // Deduplicate by fingerprint: a member listed twice should not produce two
@@ -83,6 +84,7 @@ export async function decryptMessage(opts: DecryptMessageOptions): Promise<Decry
     throw new KeyLockedError();
   }
 
+  const { decrypt, readMessage } = await loadOpenPGP();
   const message = await readMessage({ armoredMessage: opts.ciphertext });
   const verificationKeys = opts.senderPublicKey
     ? [await readPublicKey(opts.senderPublicKey)]

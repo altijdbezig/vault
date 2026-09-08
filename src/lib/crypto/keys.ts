@@ -1,6 +1,6 @@
-import { decryptKey, generateKey, readKey, readPrivateKey } from 'openpgp';
 import type { PrivateKey, PublicKey } from 'openpgp';
 import { WrongPassphraseError } from './errors';
+import { loadOpenPGP } from './openpgp';
 
 export interface GenerateKeyPairOptions {
   username: string;
@@ -27,6 +27,8 @@ export interface GeneratedKeyPair {
  * otherwise leak the user's email as metadata.
  */
 export async function generateKeyPair(opts: GenerateKeyPairOptions): Promise<GeneratedKeyPair> {
+  const { generateKey } = await loadOpenPGP();
+
   const { publicKey, privateKey } = await generateKey({
     // OpenPGP.js v6: 'curve25519' is the modern Ed25519/X25519 key type.
     // (In v5 this was type: 'ecc' + curve: 'curve25519'; that curve name is
@@ -59,6 +61,7 @@ export async function unlockPrivateKey(
   privateKeyArmored: string,
   passphrase: string,
 ): Promise<PrivateKey> {
+  const { decryptKey, readPrivateKey } = await loadOpenPGP();
   const lockedKey = await readPrivateKey({ armoredKey: privateKeyArmored });
 
   try {
@@ -77,6 +80,7 @@ export async function unlockPrivateKey(
  * pointed at whatever came back from the server.
  */
 export async function readPublicKey(armored: string): Promise<PublicKey> {
+  const { readKey } = await loadOpenPGP();
   const key = await readKey({ armoredKey: armored });
   return key.toPublic();
 }
@@ -88,5 +92,6 @@ export function getFingerprint(key: PublicKey | PrivateKey): string {
 
 /** Reads a private key without unlocking it (still passphrase-encrypted). */
 export async function readLockedPrivateKey(armored: string): Promise<PrivateKey> {
+  const { readPrivateKey } = await loadOpenPGP();
   return await readPrivateKey({ armoredKey: armored });
 }

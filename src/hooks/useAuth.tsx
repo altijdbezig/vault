@@ -46,6 +46,8 @@ export interface AuthContextValue {
   signUp(email: string, password: string, username: string): Promise<void>;
   signIn(email: string, password: string): Promise<void>;
   unlock(password: string): Promise<void>;
+  /** Drops the key from memory and returns to the unlock screen. */
+  lock(): void;
   signOut(): Promise<void>;
   importKey(armored: string, password: string): Promise<void>;
   /** Returns the stored, still passphrase-encrypted key, for backup export. */
@@ -250,6 +252,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [profile, user],
   );
 
+  const lock = useCallback((): void => {
+    lockSession();
+    setStatus('locked');
+  }, []);
+
   const signOut = useCallback(async (): Promise<void> => {
     // Drop the key from memory before anything else can fail.
     lockSession();
@@ -283,6 +290,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signUp,
       signIn,
       unlock,
+      lock,
       signOut,
       importKey,
       exportEncryptedKey,
@@ -295,6 +303,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signUp,
       signIn,
       unlock,
+      lock,
       signOut,
       importKey,
       exportEncryptedKey,
