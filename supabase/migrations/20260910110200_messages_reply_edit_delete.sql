@@ -24,8 +24,22 @@ create index if not exists messages_reply_to_id_idx
 alter table public.messages
   add column if not exists edited_at timestamptz;
 
--- De afzender mag zijn eigen bericht wijzigen zolang hij nog lid is van het
--- kanaal. Twee dingen om te weten:
+-- LET OP: dit VERVANGT de bestaande policy, hij komt er niet naast.
+--
+-- Productie heeft al een update-policy op messages, "eigen bericht bewerken",
+-- met using en with check op sender_id = auth.uid(). Een tweede permissive
+-- policy ernaast zou met OR gecombineerd worden, en dan bepaalt de ruimste
+-- van de twee wat mag. Twee policies voor hetzelfde commando betekent dus dat
+-- niemand meer uit één regel kan lezen wat de grens is.
+--
+-- Deze policy houdt de bestaande beperking (sender_id = auth.uid() aan beide
+-- kanten) volledig aan en voegt er één voorwaarde aan toe: je moet nog lid
+-- zijn van het kanaal. Dat is een VERSMALLING ten opzichte van productie —
+-- wie een kanaal verlaten heeft, kan zijn oude berichten daar niet meer
+-- bewerken of verwijderen. Bewust: het is ook wat voorkomt dat een bericht
+-- naar een kanaal geschoven wordt waar de afzender niet in zit.
+--
+-- Drie dingen om te weten:
 --
 -- 1. RLS werkt per rij, niet per kolom. Deze policy staat dus toe dat de
 --    afzender ciphertext, edited_at en deleted_at aanpast. Dat is precies wat
@@ -39,11 +53,16 @@ alter table public.messages
 --    een ander toeschrijven. De handtekening zou dan niet meer kloppen, maar
 --    de rij is dan al vervuild.
 --
--- Dit is een extra permissive policy, geen vervanging: bestaande policies op
--- messages worden niet aangeraakt. Permissive policies worden met OR
--- gecombineerd, dus dit kan alleen rechten toevoegen, nooit wegnemen.
+-- 3. channel_id wordt NIET vastgezet op zijn oude waarde. Een with check kan
+--    niet naar de vorige waarde van een rij kijken, dus dit kan alleen met een
+--    trigger. Wat de regel hieronder wel afdwingt: het doelkanaal moet een
+--    kanaal zijn waar je zelf lid van bent. Een bericht verplaatsen tussen
+--    twee kanalen waar je beide in zit, blijft dus mogelijk. Genoteerd in
+--    docs/migraties-en-rls-tests.md; niet gebouwd, want er is geen scherm dat
+--    het doet en een trigger toevoegen was niet gevraagd.
+drop policy if exists "eigen bericht bewerken" on public.messages;
 drop policy if exists "afzender bewerkt eigen bericht" on public.messages;
-create policy "afzender bewerkt eigen bericht"
+create policy "eigen bericht bewerken"
   on public.messages for update
   to authenticated
   using (sender_id = auth.uid() and public.is_channel_member(channel_id))
@@ -77,11 +96,18 @@ create policy "afzender bewerkt eigen bericht"
 -- Realtime
 -- ---------------------------------------------------------------------------
 
--- messages staat al in de publicatie voor INSERT. Bewerken en verwijderen
--- komen als UPDATE binnen; controleer in het dashboard dat Realtime op
--- messages ook UPDATE doorgeeft (de toggle zet normaal alle events aan).
+-- Hier hoeft niets te gebeuren, en dat is nagekeken (10-09-2026): de
+-- publicatie supabase_realtime bevat messages al, met pubinsert, pubupdate en
+-- pubdelete alle drie op true. Bewerken en verwijderen komen als UPDATE binnen
+-- en worden dus doorgegeven.
 --
--- replica identity blijft op de default (primary key). De UPDATE-payload
--- bevat dan een complete `new`, en `old` alleen de id. De client gebruikt
--- alleen `new`, dus REPLICA IDENTITY FULL is niet nodig — dat zou wel elke
--- oude ciphertext nog een keer over de socket sturen.
+-- Replica identity staat op default, dus op de primary key. Gevolg:
+--
+-- - Bij een UPDATE komt de volledige nieuwe rij mee in `new`. Het filter
+--   channel_id=eq.<id> in subscribeToChannel werkt daarom ook voor UPDATE.
+-- - Bij een echte DELETE zou `old` alleen de id bevatten, en zou dat filter
+--   dus nooit matchen. Niet relevant voor messages: verwijderen is hier een
+--   UPDATE (deleted_at + lege ciphertext), geen DELETE.
+--
+-- REPLICA IDENTITY FULL is niet nodig en niet wenselijk: dat zou bij elke
+-- bewerking de vorige ciphertext nog een keer over de socket sturen.

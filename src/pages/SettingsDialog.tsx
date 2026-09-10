@@ -416,9 +416,41 @@ function KeyTab() {
               berichten.
             </li>
           </ul>
+        </div>
+      </Section>
+
+      {/*
+        * Deze sectie staat er los, en niet als voetnoot onder de vorige.
+        *
+        * Dit is het duurste gevolg van het hele ontwerp en het staat nergens
+        * anders in de app: je sleutel kwijt is niet "opnieuw instellen" maar
+        * "nieuw account". Wie dat pas ontdekt op het moment dat het gebeurt,
+        * heeft er niets meer aan.
+        */}
+      <Section title="Je sleutel hoort bij dit account en is niet te vervangen">
+        <div className="flex flex-col gap-2">
+          <p className="text-sm leading-relaxed text-secondary">
+            Bij dit account hoort één publieke sleutel, en die staat vast. Je kunt er
+            geen nieuwe voor in de plaats zetten — ook niet met volledige toegang tot
+            de database. Dat is bewust: kon iemand zijn sleutel omwisselen, dan
+            versleutelt iedereen vanaf dat moment stil naar de nieuwe en merkt niemand
+            het. Precies waar het vergelijken van vingerafdrukken voor bedoeld is.
+          </p>
+          <WarningNotice>
+            <strong>
+              Ben je je sleutel kwijt en heb je geen back-upbestand en geen ander
+              apparaat waar hij nog op staat, dan is dit account niet meer te
+              gebruiken.
+            </strong>{' '}
+            Je maakt dan een nieuw account met een nieuwe gebruikersnaam en begint met
+            een leeg gesprek. Je oude berichten blijven versleuteld op de server
+            staan; niemand kan ze nog openen, jij ook niet.
+          </WarningNotice>
           <p className="text-xs leading-relaxed text-muted">
-            Dat wij het niet kunnen herstellen is geen tekortkoming maar de reden dat
-            dit werkt: een noodluik voor ons zou ook een noodluik voor een ander zijn.
+            Er is dus geen herstelpad, en dat is een keuze en geen tekortkoming: een
+            noodluik voor ons zou ook een noodluik voor iemand anders zijn. Wat je nu
+            kunt doen is één ding: hierboven je sleutel exporteren en dat bestand
+            ergens bewaren waar jij bij kunt en niemand anders.
           </p>
         </div>
       </Section>

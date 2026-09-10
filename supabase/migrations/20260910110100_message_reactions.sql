@@ -69,6 +69,18 @@ create policy "eigen reactie weghalen"
 -- zet een andere.
 
 -- Realtime, zodat een reactie van iemand anders meteen verschijnt.
+--
+-- Dit is wel nodig: de publicatie supabase_realtime bevat (nagekeken
+-- 10-09-2026) alleen messages en channel_members, niet message_reactions.
+--
+-- Replica identity blijft op default, dus op de primary key — en dat werkt
+-- hier alleen doordat de primary key (message_id, user_id, emoji) is. Bij een
+-- DELETE stuurt Postgres namelijk alleen de key-kolommen mee in `old`, en dat
+-- zijn hier precies de drie velden die de client nodig heeft om te weten welke
+-- reactie weg moet. Zou de tabel ooit een losse id-kolom als primary key
+-- krijgen, dan komt er bij een DELETE alleen die id mee en werkt het weghalen
+-- van een reactie niet meer zonder REPLICA IDENTITY FULL.
+--
 -- Idempotent gemaakt: opnieuw toevoegen van een tabel die al in de
 -- publicatie zit is een error, geen no-op.
 do $$

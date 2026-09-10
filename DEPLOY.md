@@ -60,14 +60,24 @@ Verder:
   meteen een sessie terug, waarna de client het keypair genereert en het profiel
   aanmaakt. Zet je bevestiging aan, dan is er na signup geen sessie en breekt
   die hele flow.
-- **Realtime** moet aanstaan op `messages`, `channel_members` en
-  `message_reactions`. Bij `messages` moeten ook **UPDATE**-events doorgegeven
-  worden, niet alleen INSERT: bewerken en verwijderen van een bericht komen als
-  UPDATE binnen. De toggle in het dashboard zet normaal alle events aan;
-  controleer het, want zonder UPDATE zie je een bewerking pas na een herlaad en
-  blijft een verwijderd bericht aan de andere kant leesbaar zolang dat tabblad
-  open staat. `message_reactions` wordt door de migratie zelf aan de publicatie
-  toegevoegd.
+- **Realtime staat goed en hoeft niet met de hand aangepast** (nagekeken
+  10-09-2026). De publicatie `supabase_realtime` bevat `messages` en
+  `channel_members`, met `pubinsert`, `pubupdate` én `pubdelete` alle drie op
+  true. Bewerken en verwijderen van een bericht komen als UPDATE binnen en
+  worden dus doorgegeven; daar is geen handmatige stap voor nodig.
+  `message_reactions` zit er nog niet in en wordt door migratie
+  `20260910110100` zelf aan de publicatie toegevoegd.
+
+  Wat je wel moet weten als je hier later aan sleutelt: **replica identity
+  staat op default**, dus op de primary key. Bij een UPDATE komt de volledige
+  nieuwe rij mee, dus het filter `channel_id=eq.<id>` werkt ook voor UPDATE.
+  Bij een echte DELETE komt alleen de primary key mee, en dan matcht dat filter
+  nooit. Voor `messages` maakt dat niets uit, want verwijderen is hier een
+  UPDATE (`deleted_at` + lege ciphertext) en geen DELETE. Voor
+  `message_reactions` werkt DELETE juist wél, omdat de primary key daar
+  `(message_id, user_id, emoji)` is — precies de velden die de client nodig
+  heeft. `REPLICA IDENTITY FULL` is nergens nodig en zou bij elke bewerking de
+  vorige ciphertext nog een keer over de socket sturen.
 - Er is geen database-trigger die `profiles` vult, en die moet er ook niet
   komen: de public key bestaat alleen in de browser, dus alleen de client kan
   die rij correct aanmaken.

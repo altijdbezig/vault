@@ -9,6 +9,24 @@
 -- en functies worden vervangen, en tabellen worden alleen aangemaakt als ze er
 -- nog niet zijn. Twee keer draaien kan dus geen kwaad.
 --
+-- BELANGRIJK, en het verschil met de eerste versie van dit bestand: vijf
+-- policies VERVANGEN een bestaande policy in productie in plaats van ernaast
+-- te komen staan. Permissive policies combineren met OR, dus twee policies
+-- voor dezelfde tabel en hetzelfde commando betekent dat de ruimste van de
+-- twee bepaalt wat mag — en bij profiles en messages zou dat de bescherming
+-- stilzwijgend uitzetten. Elk van die vijf begint daarom met een
+-- "drop policy if exists" op de EXACTE naam uit productie:
+--
+--   messages         UPDATE  "eigen bericht bewerken"
+--   channels         DELETE  "maker of servereigenaar verwijdert kanaal"
+--   profiles         UPDATE  "eigen profiel bewerken"
+--   servers          UPDATE  "eigenaar bewerkt server"
+--   server_members   DELETE  "jezelf verwijderen uit server"
+--   channel_members  DELETE  "kanaal verlaten"
+--
+-- Elke vervanger houdt de bestaande beperking aan en zet er alleen bij wat
+-- nodig was. Wat er per stuk verandert staat in het commentaar erboven.
+--
 -- Draai dit in een transactie als je dat prettig vindt, maar het hoeft niet:
 -- de stappen zijn onafhankelijk en een halve run is met een tweede run recht
 -- te trekken.
@@ -188,6 +206,18 @@ create policy "eigen reactie weghalen"
 -- zet een andere.
 
 -- Realtime, zodat een reactie van iemand anders meteen verschijnt.
+--
+-- Dit is wel nodig: de publicatie supabase_realtime bevat (nagekeken
+-- 10-09-2026) alleen messages en channel_members, niet message_reactions.
+--
+-- Replica identity blijft op default, dus op de primary key — en dat werkt
+-- hier alleen doordat de primary key (message_id, user_id, emoji) is. Bij een
+-- DELETE stuurt Postgres namelijk alleen de key-kolommen mee in `old`, en dat
+-- zijn hier precies de drie velden die de client nodig heeft om te weten welke
+-- reactie weg moet. Zou de tabel ooit een losse id-kolom als primary key
+-- krijgen, dan komt er bij een DELETE alleen die id mee en werkt het weghalen
+-- van een reactie niet meer zonder REPLICA IDENTITY FULL.
+--
 -- Idempotent gemaakt: opnieuw toevoegen van een tabel die al in de
 -- publicatie zit is een error, geen no-op.
 do $$
@@ -233,8 +263,22 @@ create index if not exists messages_reply_to_id_idx
 alter table public.messages
   add column if not exists edited_at timestamptz;
 
--- De afzender mag zijn eigen bericht wijzigen zolang hij nog lid is van het
--- kanaal. Twee dingen om te weten:
+-- LET OP: dit VERVANGT de bestaande policy, hij komt er niet naast.
+--
+-- Productie heeft al een update-policy op messages, "eigen bericht bewerken",
+-- met using en with check op sender_id = auth.uid(). Een tweede permissive
+-- policy ernaast zou met OR gecombineerd worden, en dan bepaalt de ruimste
+-- van de twee wat mag. Twee policies voor hetzelfde commando betekent dus dat
+-- niemand meer uit één regel kan lezen wat de grens is.
+--
+-- Deze policy houdt de bestaande beperking (sender_id = auth.uid() aan beide
+-- kanten) volledig aan en voegt er één voorwaarde aan toe: je moet nog lid
+-- zijn van het kanaal. Dat is een VERSMALLING ten opzichte van productie —
+-- wie een kanaal verlaten heeft, kan zijn oude berichten daar niet meer
+-- bewerken of verwijderen. Bewust: het is ook wat voorkomt dat een bericht
+-- naar een kanaal geschoven wordt waar de afzender niet in zit.
+--
+-- Drie dingen om te weten:
 --
 -- 1. RLS werkt per rij, niet per kolom. Deze policy staat dus toe dat de
 --    afzender ciphertext, edited_at en deleted_at aanpast. Dat is precies wat
@@ -248,11 +292,16 @@ alter table public.messages
 --    een ander toeschrijven. De handtekening zou dan niet meer kloppen, maar
 --    de rij is dan al vervuild.
 --
--- Dit is een extra permissive policy, geen vervanging: bestaande policies op
--- messages worden niet aangeraakt. Permissive policies worden met OR
--- gecombineerd, dus dit kan alleen rechten toevoegen, nooit wegnemen.
+-- 3. channel_id wordt NIET vastgezet op zijn oude waarde. Een with check kan
+--    niet naar de vorige waarde van een rij kijken, dus dit kan alleen met een
+--    trigger. Wat de regel hieronder wel afdwingt: het doelkanaal moet een
+--    kanaal zijn waar je zelf lid van bent. Een bericht verplaatsen tussen
+--    twee kanalen waar je beide in zit, blijft dus mogelijk. Genoteerd in
+--    docs/migraties-en-rls-tests.md; niet gebouwd, want er is geen scherm dat
+--    het doet en een trigger toevoegen was niet gevraagd.
+drop policy if exists "eigen bericht bewerken" on public.messages;
 drop policy if exists "afzender bewerkt eigen bericht" on public.messages;
-create policy "afzender bewerkt eigen bericht"
+create policy "eigen bericht bewerken"
   on public.messages for update
   to authenticated
   using (sender_id = auth.uid() and public.is_channel_member(channel_id))
@@ -286,14 +335,21 @@ create policy "afzender bewerkt eigen bericht"
 -- Realtime
 -- ---------------------------------------------------------------------------
 
--- messages staat al in de publicatie voor INSERT. Bewerken en verwijderen
--- komen als UPDATE binnen; controleer in het dashboard dat Realtime op
--- messages ook UPDATE doorgeeft (de toggle zet normaal alle events aan).
+-- Hier hoeft niets te gebeuren, en dat is nagekeken (10-09-2026): de
+-- publicatie supabase_realtime bevat messages al, met pubinsert, pubupdate en
+-- pubdelete alle drie op true. Bewerken en verwijderen komen als UPDATE binnen
+-- en worden dus doorgegeven.
 --
--- replica identity blijft op de default (primary key). De UPDATE-payload
--- bevat dan een complete `new`, en `old` alleen de id. De client gebruikt
--- alleen `new`, dus REPLICA IDENTITY FULL is niet nodig — dat zou wel elke
--- oude ciphertext nog een keer over de socket sturen.
+-- Replica identity staat op default, dus op de primary key. Gevolg:
+--
+-- - Bij een UPDATE komt de volledige nieuwe rij mee in `new`. Het filter
+--   channel_id=eq.<id> in subscribeToChannel werkt daarom ook voor UPDATE.
+-- - Bij een echte DELETE zou `old` alleen de id bevatten, en zou dat filter
+--   dus nooit matchen. Niet relevant voor messages: verwijderen is hier een
+--   UPDATE (deleted_at + lege ciphertext), geen DELETE.
+--
+-- REPLICA IDENTITY FULL is niet nodig en niet wenselijk: dat zou bij elke
+-- bewerking de vorige ciphertext nog een keer over de socket sturen.
 
 -- =====================================================================
 -- 20260910110300_channels_position_description_management.sql
@@ -329,10 +385,19 @@ create index if not exists channels_server_id_position_idx
 -- - Groep of DM (server_id null): elk lid. Een groep heeft geen rollen, en de
 --   naam van een groep is iets wat de deelnemers samen bepalen.
 --
--- with check herhaalt de using-voorwaarde plus een extra slot op server_id.
--- Zonder dat slot kan een admin een kanaal uit zijn server verplaatsen naar
--- een server waar hij niets te zoeken heeft, of naar server_id null waarmee
--- het kanaal in de gesprekkenlijst van alle leden opduikt.
+-- Productie heeft (nagekeken 10-09-2026) GEEN update-policy op channels, dus
+-- deze komt niet naast iets anders te staan: hij is de enige, en zonder hem
+-- kan er niets hernoemd, van omschrijving voorzien of versleept worden.
+--
+-- with check herhaalt de using-voorwaarde. Wat dat wel doet: het doelkanaal
+-- moet na de wijziging nog steeds een kanaal zijn waar je beheerder van bent.
+-- Wat het niet doet: server_id vastzetten op de oude waarde — een with check
+-- kan niet naar de vorige waarde kijken. Een admin van server A kan een kanaal
+-- dus niet naar server B verplaatsen (daar is hij geen admin) en niet naar
+-- server_id null (dan valt hij in de else-tak en is hij geen kanaallid van een
+-- kanaal dat hij net uit zijn server haalt) — maar dat leunt op die twee
+-- toevalligheden en niet op een expliciete regel. Genoteerd in
+-- docs/migraties-en-rls-tests.md als iets om live te proberen.
 drop policy if exists "beheerders wijzigen kanalen" on public.channels;
 create policy "beheerders wijzigen kanalen"
   on public.channels for update
@@ -363,17 +428,43 @@ create policy "beheerders wijzigen kanalen"
 --   en dat is voor niemand meer zichtbaar. Een groep die een deelnemer voor
 --   iedereen kan wissen is een ander soort feature en die is niet gevraagd.
 --
--- created_by mag ook, voor het geval een net aangemaakt serverkanaal moet
--- worden teruggedraaid door de maker (createChannel doet dat al bij een
--- mislukte channel_members-insert, en leunt nu niet meer op een policy die er
--- misschien niet is).
+-- LET OP: dit VERVANGT de bestaande policy.
+--
+-- Productie heeft al "maker of servereigenaar verwijdert kanaal". Zou deze
+-- ernaast komen te staan, dan combineert Postgres ze met OR en is het
+-- resultaat "maker OF eigenaar OF admin" zonder dat één van de twee dat zegt.
+-- Dat is precies de uitbreiding die sectie 4.3 vraagt, maar hij hoort in één
+-- regel te staan waar je hem kunt lezen.
+--
+-- Wat er behouden blijft: de maker (created_by = auth.uid()) en de eigenaar.
+-- is_server_admin dekt de eigenaar, want die heeft role = 'owner' in
+-- server_members; owner_id op servers wordt daarnaast gecontroleerd zodat een
+-- eigenaar die om welke reden dan ook geen server_members-rij heeft er niet
+-- buiten valt.
+--
+-- Wat erbij komt: admins.
+--
+-- created_by blijft nodig voor het terugdraaien van een net aangemaakt
+-- serverkanaal waarvan de channel_members-insert faalde (zie createChannel).
+drop policy if exists "maker of servereigenaar verwijdert kanaal" on public.channels;
 drop policy if exists "beheerders verwijderen kanalen" on public.channels;
-create policy "beheerders verwijderen kanalen"
+create policy "maker of servereigenaar verwijdert kanaal"
   on public.channels for delete
   to authenticated
   using (
     created_by = auth.uid()
-    or (server_id is not null and public.is_server_admin(server_id))
+    or (
+      server_id is not null
+      and (
+        public.is_server_admin(server_id)
+        or exists (
+          select 1
+          from public.servers s
+          where s.id = channels.server_id
+            and s.owner_id = auth.uid()
+        )
+      )
+    )
   );
 
 -- =====================================================================
@@ -382,6 +473,10 @@ create policy "beheerders verwijderen kanalen"
 
 -- Serverinstellingen: naam, icoon, verwijderen.
 
+-- icon_url BESTAAT AL in productie (nagekeken 10-09-2026). Deze regel doet
+-- daar dus niets; hij blijft staan zodat een verse database dezelfde vorm
+-- krijgt, en omdat "if not exists" hem gratis maakt.
+--
 -- Het icoon is een URL naar de publieke avatars-bucket, geen bytes in de
 -- database. Zelfde afweging als bij een profielavatar: iedereen die de server
 -- ziet moet hem kunnen laden, dus versleutelen kan niet en heeft ook geen
@@ -393,20 +488,33 @@ alter table public.servers
 -- Naam en icoon wijzigen: owner of admin
 -- ---------------------------------------------------------------------------
 
--- owner_id wordt hier NIET in de with check gecontroleerd, en dat is met
--- opzet. De voor de hand liggende versie,
+-- LET OP: dit VERVANGT de bestaande policy.
+--
+-- Productie heeft al "eigenaar bewerkt server". Zou deze ernaast komen, dan
+-- combineert Postgres ze met OR en mag "eigenaar OF admin" zonder dat één van
+-- beide regels dat zegt. Sectie 4.1 vraagt die uitbreiding (naam en icoon door
+-- owner of admin), dus hij hoort erin — in één regel.
+--
+-- Wat behouden blijft: de eigenaar, via owner_id = auth.uid(). Dat is
+-- vermoedelijk precies wat de bestaande policy controleert, en het staat er
+-- expliciet bij zodat een eigenaar zonder server_members-rij er niet buiten
+-- valt. Wat erbij komt: admins, via is_server_admin.
+--
+-- owner_id wordt hier NIET in de with check vastgezet, en dat is met opzet.
+-- De voor de hand liggende versie,
 --
 --   with check (owner_id = (select owner_id from public.servers where ...))
 --
 -- is een subquery op public.servers binnen een policy op public.servers. Dat
 -- is exact de oneindige recursie waar CLAUDE.md voor waarschuwt. Het slot op
--- owner_id staat daarom in een trigger, die buiten RLS om werkt.
+-- owner_id staat daarom in de trigger hieronder, die buiten RLS om werkt.
+drop policy if exists "eigenaar bewerkt server" on public.servers;
 drop policy if exists "beheerders wijzigen de server" on public.servers;
-create policy "beheerders wijzigen de server"
+create policy "eigenaar bewerkt server"
   on public.servers for update
   to authenticated
-  using (public.is_server_admin(id))
-  with check (public.is_server_admin(id));
+  using (owner_id = auth.uid() or public.is_server_admin(id))
+  with check (owner_id = auth.uid() or public.is_server_admin(id));
 
 -- Zonder dit kan een admin owner_id op zichzelf zetten en de server
 -- overnemen. Eigendom overdragen mag wel, maar alleen door de zittende
@@ -437,13 +545,22 @@ create trigger servers_guard_owner_id
 -- Verwijderen: alleen de eigenaar
 -- ---------------------------------------------------------------------------
 
--- De client laat de naam overtypen voordat hij dit aanroept, maar dat is een
--- rem in de UI en geen beveiliging — deze policy is de echte grens.
+-- Hier staat met opzet geen policy meer.
+--
+-- Productie heeft al "eigenaar verwijdert server", en dat is exact de grens
+-- die deze migratie wilde: alleen de eigenaar. Een eigen versie ernaast zou
+-- twee permissive delete-policies op dezelfde tabel geven met dezelfde
+-- uitkomst — geen extra rechten, maar wel twee plekken om te lezen en een
+-- tweede definitie van "eigenaar" (server_members.role naast
+-- servers.owner_id) die uit elkaar kan lopen.
+--
+-- De regel die eronder ligt blijft: de client laat de naam overtypen voordat
+-- hij deleteServer aanroept, maar dat is een rem in de UI en geen beveiliging.
+-- De policy in productie is de echte grens.
+--
+-- Deze drop staat er wel, zodat een database waar mijn versie al op stond
+-- weer op één policy uitkomt.
 drop policy if exists "eigenaar verwijdert de server" on public.servers;
-create policy "eigenaar verwijdert de server"
-  on public.servers for delete
-  to authenticated
-  using (public.is_server_owner(id));
 
 -- =====================================================================
 -- 20260910110500_server_members_roles_and_leave.sql
@@ -458,6 +575,10 @@ create policy "eigenaar verwijdert de server"
 -- Admin aanwijzen of terugzetten naar member. Een admin kan dit niet: dan kan
 -- een admin zichzelf tot owner promoveren en is het verschil tussen de twee
 -- rollen weg.
+--
+-- Productie heeft (nagekeken 10-09-2026) GEEN update-policy op
+-- server_members, dus deze is de enige en komt niet naast iets anders. Zonder
+-- hem kan er geen admin aangewezen worden en kan eigendom niet overgedragen.
 drop policy if exists "eigenaar wijzigt rollen" on public.server_members;
 create policy "eigenaar wijzigt rollen"
   on public.server_members for update
@@ -469,16 +590,32 @@ create policy "eigenaar wijzigt rollen"
 -- Vertrekken en verwijderd worden
 -- ---------------------------------------------------------------------------
 
--- Twee gevallen: je eigen rij (vertrekken) of de eigenaar die iemand
--- verwijdert. Extra permissive policy; een bestaande policy die alleen
--- "user_id = auth.uid()" toestaat blijft staan en wordt met OR gecombineerd.
+-- LET OP: dit VERVANGT de bestaande policy.
+--
+-- Productie heeft al "jezelf verwijderen uit server", die alleen je eigen rij
+-- toestaat. Zou deze ernaast komen, dan combineert Postgres ze met OR en mag
+-- "eigen rij OF eigenaar" zonder dat één van beide regels dat zegt. Sectie 4.3
+-- vraagt die uitbreiding (de eigenaar kan leden verwijderen), dus hij hoort
+-- erin — in één regel.
+--
+-- Wat behouden blijft: je eigen rij, dus vertrekken kan iedereen. Wat erbij
+-- komt: de eigenaar mag ook de rij van een ander weghalen. De eigenaar wordt
+-- langs twee wegen erkend, zodat hij er niet buiten valt als owner_id en
+-- server_members.role uit elkaar zouden lopen.
+drop policy if exists "jezelf verwijderen uit server" on public.server_members;
 drop policy if exists "vertrekken of verwijderd worden" on public.server_members;
-create policy "vertrekken of verwijderd worden"
+create policy "jezelf verwijderen uit server"
   on public.server_members for delete
   to authenticated
   using (
     user_id = auth.uid()
     or public.is_server_owner(server_id)
+    or exists (
+      select 1
+      from public.servers s
+      where s.id = server_members.server_id
+        and s.owner_id = auth.uid()
+    )
   );
 
 -- ---------------------------------------------------------------------------
@@ -544,24 +681,41 @@ create trigger server_members_guard_last_owner
 -- opruimen, anders blijf je berichten ontvangen uit kanalen van een server
 -- waar je niet meer in zit.
 --
--- Je eigen rijen kon je al verwijderen. Wat er ontbrak is de eigenaar die
--- iemand verwijdert: die moet ook diens kanaallidmaatschappen weghalen, en de
--- bestaande policy staat alleen de eigen rij toe. Dit is dus een extra
--- permissive policy naast de bestaande.
+-- LET OP: dit VERVANGT de bestaande policy.
+--
+-- Dit is de enige tabel waar mijn oorspronkelijke aanname klopte: productie
+-- heeft "kanaal verlaten", die alleen je eigen rij toestaat, en de eigenaar
+-- kon dus niemand uit de kanalen van zijn server halen. Die uitbreiding is
+-- nodig voor 4.3 en 4.5 — maar ook hier in één regel in plaats van twee
+-- permissive policies naast elkaar.
+--
+-- Wat behouden blijft: je eigen rij, dus een groep verlaten en een server
+-- verlaten blijven werken. Wat erbij komt: de eigenaar van de server waar het
+-- kanaal bij hoort.
 --
 -- Alleen voor serverkanalen. Een groep is geen server en heeft geen eigenaar
 -- die er iemand uit kan zetten.
+drop policy if exists "kanaal verlaten" on public.channel_members;
 drop policy if exists "eigenaar verwijdert kanaallidmaatschap" on public.channel_members;
-create policy "eigenaar verwijdert kanaallidmaatschap"
+create policy "kanaal verlaten"
   on public.channel_members for delete
   to authenticated
   using (
-    exists (
+    user_id = auth.uid()
+    or exists (
       select 1
       from public.channels c
       where c.id = channel_members.channel_id
         and c.server_id is not null
-        and public.is_server_owner(c.server_id)
+        and (
+          public.is_server_owner(c.server_id)
+          or exists (
+            select 1
+            from public.servers s
+            where s.id = c.server_id
+              and s.owner_id = auth.uid()
+          )
+        )
     )
   );
 
@@ -734,20 +888,29 @@ grant execute on function public.redeem_server_invite(text) to authenticated;
 
 -- Weergavenaam en avatar.
 --
--- Zouden al moeten bestaan; if not exists zodat deze migratie ook draait op
--- een database waar ze ontbreken.
+-- display_name, avatar_url EN created_at BESTAAN AL in productie (nagekeken
+-- 10-09-2026). Deze drie regels doen daar dus niets. Ze blijven staan zodat
+-- een verse database dezelfde vorm krijgt, en "if not exists" maakt ze gratis.
+--
+-- Wat deze migratie wél toevoegt is alles hieronder: de functie
+-- profile_key_unchanged en de update-policy die de publieke sleutel op slot
+-- zet.
 alter table public.profiles add column if not exists display_name text;
 alter table public.profiles add column if not exists avatar_url text;
-
--- created_at is nodig voor "lid sinds" op de profielkaart. Default now() geeft
--- bestaande rijen het moment van de migratie in plaats van hun echte
--- aanmaakmoment — dat is niet mooi maar wel eerlijker dan null, en het is
--- alleen een label.
 alter table public.profiles add column if not exists created_at timestamptz not null default now();
 
 -- Een lege string is geen weergavenaam. Null betekent "gebruik de
 -- gebruikersnaam", en dat onderscheid moet in de database staan, anders moet
 -- elke lezer het opnieuw verzinnen.
+--
+-- LET OP bij het draaien: als er in productie al een rij staat met
+-- display_name = '' (een lege string in plaats van null), dan faalt deze
+-- ALTER. Repareer die rij dan eerst:
+--
+--   update public.profiles set display_name = null where btrim(display_name) = '';
+--
+-- De client stuurt altijd null en nooit een lege string, dus dit kan alleen
+-- van een oude of met de hand gezette rij komen.
 alter table public.profiles drop constraint if exists profiles_display_name_not_blank;
 alter table public.profiles add constraint profiles_display_name_not_blank
   check (display_name is null or btrim(display_name) <> '');
@@ -784,16 +947,39 @@ as $$
     select 1
     from public.profiles p
     where p.id = p_id
-      and p.public_key = p_public_key
-      and p.key_fingerprint = p_fingerprint
+      -- is not distinct from, niet =. Een half aangemaakt profiel kan
+      -- public_key null hebben (de code rekent daar op: zie
+      -- ChannelMemberKey.publicKey), en null = null levert null op, geen true.
+      -- Met = zou zo iemand zijn weergavenaam nooit meer kunnen opslaan, en de
+      -- foutmelding zou een 403 zijn die niets uitlegt.
+      and p.public_key is not distinct from p_public_key
+      and p.key_fingerprint is not distinct from p_fingerprint
   );
 $$;
 
 revoke execute on function public.profile_key_unchanged(uuid, text, text) from public, anon;
 grant execute on function public.profile_key_unchanged(uuid, text, text) to authenticated;
 
+-- LET OP: dit VERVANGT de bestaande policy, en dit is de belangrijkste van
+-- de hele correctieronde.
+--
+-- Productie heeft al "eigen profiel bewerken", die je eigen rij toestaat.
+-- Zou deze policy ernaast komen te staan, dan combineert Postgres ze met OR
+-- en is het resultaat gewoon "id = auth.uid()" — het slot op de publieke
+-- sleutel doet dan NIETS, zonder foutmelding en zonder dat er iets kapot
+-- lijkt. Dat is precies het scenario waar sleutelverificatie voor bestaat:
+-- iemand verwisselt zijn publieke sleutel, iedereen versleutelt vanaf dat
+-- moment stil naar de nieuwe, en niemand merkt het.
+--
+-- Wat behouden blijft: alleen je eigen rij. Wat erbij komt: public_key en
+-- key_fingerprint mogen niet mee veranderen.
+--
+-- De client raakt die twee kolommen nooit aan (updateProfile bouwt zijn patch
+-- alleen uit display_name en avatar_url, en de enige plek waar public_key
+-- geschreven wordt is de INSERT bij signup, die hier los van staat).
+drop policy if exists "eigen profiel bewerken" on public.profiles;
 drop policy if exists "eigen profiel bijwerken" on public.profiles;
-create policy "eigen profiel bijwerken"
+create policy "eigen profiel bewerken"
   on public.profiles for update
   to authenticated
   using (id = auth.uid())

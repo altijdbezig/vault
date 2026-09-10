@@ -215,6 +215,22 @@ export type RealtimeStatus = 'connected' | 'disconnected';
  * onStatus reports whether the subscription is live. The socket drops on
  * sleep, on a network change and inside some tunnels, and without this the
  * app looks like a quiet channel instead of a broken connection.
+ *
+ * One thing about the publication, verified against production on 2026-09-10
+ * so nobody has to rediscover it: supabase_realtime carries messages with
+ * insert, update and delete all enabled, and replica identity is left at the
+ * default (the primary key). That combination means:
+ *
+ * - On UPDATE the whole new row arrives in `new`, so the channel_id filter
+ *   below applies to edits and deletions as well. That is what makes onUpdate
+ *   work at all.
+ * - On a real DELETE only the primary key would arrive, in `old`, and the
+ *   channel_id filter would never match it. Not a problem here, because
+ *   deleting a message is an UPDATE in this app (deleted_at plus an empty
+ *   ciphertext) and never a DELETE. If a hard delete is ever added, this
+ *   subscription will not see it without REPLICA IDENTITY FULL.
+ * - REPLICA IDENTITY FULL is deliberately not set: it would push the previous
+ *   ciphertext over the socket on every edit for no reader.
  */
 export function subscribeToChannel(
   channelId: string,

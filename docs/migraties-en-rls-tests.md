@@ -1,16 +1,114 @@
 # Migraties van de upgrade, en wat er live getest moet worden
 
-Deze migraties zijn **blind geschreven**. Het Supabase-project van Vault stond
-niet op het account waar ik bij kon, dus ik heb het schema niet kunnen
-uitlezen. Gevolgen voor hoe ze geschreven zijn:
+## Uitgangspunt: wat er op 10-09-2026 werkelijk in productie stond
 
-- Kolommen komen erbij met `add column if not exists`, ook de kolommen waarvan
-  jij zei dat ze al bestaan (`edited_at`, `display_name`, `avatar_url`). Draait
-  dus ook als ze er al zijn.
-- Policies worden **alleen toegevoegd**, nooit een bestaande gedropt waarvan ik
-  de naam niet ken. Permissive policies worden met OR gecombineerd, dus dit kan
-  alleen rechten toevoegen. `drop policy if exists` staat er alleen op de
-  namen die ik zelf introduceer, voor idempotentie.
+Supabase-project `umrpixulwailfchjnmqn`, regio `eu-central-1`, free plan.
+Aangeleverd na uitlezen; niet door mij bij de database opgevraagd.
+
+### Policies
+
+| Tabel | Commando | Naam |
+| --- | --- | --- |
+| `channel_members` | INSERT | kanaalleden toevoegen |
+| `channel_members` | DELETE | kanaal verlaten |
+| `channel_members` | SELECT | leden zien kanaalleden |
+| `channel_members` | UPDATE | eigen leesstatus bijwerken |
+| `channels` | INSERT | kanaal aanmaken |
+| `channels` | DELETE | maker of servereigenaar verwijdert kanaal |
+| `channels` | SELECT | leden zien hun kanaal |
+| `messages` | INSERT | leden sturen berichten |
+| `messages` | SELECT | leden lezen berichten |
+| `messages` | UPDATE | eigen bericht bewerken — `using` **én** `with check` op `sender_id = auth.uid()` |
+| `profiles` | INSERT | eigen profiel aanmaken |
+| `profiles` | SELECT | profielen zijn leesbaar |
+| `profiles` | UPDATE | eigen profiel bewerken |
+| `server_members` | INSERT | jezelf toevoegen aan server |
+| `server_members` | DELETE | jezelf verwijderen uit server |
+| `server_members` | SELECT | leden zien ledenlijst |
+| `servers` | INSERT | server aanmaken |
+| `servers` | DELETE | eigenaar verwijdert server |
+| `servers` | SELECT | leden zien hun server |
+| `servers` | UPDATE | eigenaar bewerkt server |
+
+`channels` en `server_members` hebben dus **geen** UPDATE-policy. Dat waren de
+enige twee gaten.
+
+### Kolommen
+
+| Tabel | Kolommen |
+| --- | --- |
+| `profiles` | id, username, display_name, avatar_url, public_key, key_fingerprint, created_at |
+| `servers` | id, name, icon_url, owner_id, created_at |
+| `server_members` | server_id, user_id, role, joined_at |
+| `channels` | id, server_id, type, name, created_by (default `auth.uid()`), created_at |
+| `channel_members` | channel_id, user_id, joined_at, last_read_at |
+| `messages` | id, channel_id, sender_id (default `auth.uid()`), ciphertext, created_at, edited_at, deleted_at |
+
+### Realtime
+
+Publicatie `supabase_realtime` bevat `messages` en `channel_members`, met
+`pubinsert`, `pubupdate` en `pubdelete` alle drie op true. Replica identity
+staat op default: alleen de primary key.
+
+Gevolgen om te kennen:
+
+- Bij een UPDATE komt de volledige nieuwe rij mee, dus het filter
+  `channel_id=eq.<id>` werkt ook voor UPDATE. Bewerken en verwijderen van een
+  bericht komen daarom gewoon binnen; hier hoeft niets ingesteld te worden.
+- Bij een echte DELETE komt alleen de primary key mee, en dan matcht dat filter
+  nooit. Voor `messages` maakt dat niets uit: verwijderen is hier een UPDATE
+  (`deleted_at` plus lege ciphertext), geen DELETE.
+- Voor `message_reactions` werkt DELETE juist wél, doordat de primary key daar
+  `(message_id, user_id, emoji)` is — precies de velden die de client nodig
+  heeft om te weten welke reactie weg moet. Zou die tabel ooit een losse
+  `id`-kolom als primary key krijgen, dan is dat stuk.
+- `REPLICA IDENTITY FULL` is nergens nodig, en zou bij elke bewerking de vorige
+  ciphertext nog een keer over de socket sturen.
+
+---
+
+## Wat dat betekende voor deze migraties
+
+Ze zijn oorspronkelijk **blind geschreven**, zonder toegang tot het schema.
+Vijf aannames bleken onjuist, één klopte:
+
+| Aanname | Werkelijkheid |
+| --- | --- |
+| `messages` heeft geen update-policy | Heeft er wél een, mét `with check` |
+| `channels` heeft geen delete-policy | Heeft er wél een |
+| `profiles` heeft geen update-policy | Heeft er wél een |
+| `profiles` mist display_name / avatar_url / created_at | Alle drie bestaan al |
+| `servers` mist icon_url | Bestaat al |
+| `channel_members` DELETE staat alleen de eigen rij toe | Klopte |
+
+Het gevaar zat niet in de kolommen maar in de policies. **Permissive policies
+combineren met OR**, dus een nieuwe policy naast een bestaande betekent dat de
+ruimste van de twee bepaalt wat mag. Bij `profiles` zou dat het slot op de
+publieke sleutel stilzwijgend hebben uitgezet: geen foutmelding, niets dat
+kapot lijkt.
+
+Daarom **vervangen** zes policies nu de bestaande in plaats van ernaast te
+komen staan. Elk begint met een `drop policy if exists` op de exacte naam uit
+de tabel hierboven, en houdt de bestaande beperking aan:
+
+| Tabel | Commando | Behouden | Erbij |
+| --- | --- | --- | --- |
+| `messages` | UPDATE | `sender_id = auth.uid()` op beide kanten | `is_channel_member(channel_id)` — een versmalling |
+| `channels` | DELETE | maker, eigenaar | admins |
+| `profiles` | UPDATE | alleen je eigen rij | public_key en key_fingerprint op slot |
+| `servers` | UPDATE | eigenaar | admins |
+| `server_members` | DELETE | je eigen rij | eigenaar mag anderen verwijderen |
+| `channel_members` | DELETE | je eigen rij | eigenaar mag anderen verwijderen |
+
+Voor `servers` DELETE staat er nu **geen** eigen policy meer. Die in productie
+is al exact de grens die deze migratie wilde, en een tweede zou alleen een
+tweede definitie van "eigenaar" introduceren (`server_members.role` naast
+`servers.owner_id`) die uit elkaar kan lopen.
+
+Verder:
+
+- Kolommen komen nog steeds met `add column if not exists`, ook de vijf die al
+  bestaan. Ze doen daar niets en houden een verse database in dezelfde vorm.
 - Wat een policy niet kan (naar de vorige waarde van een rij kijken) staat in
   een trigger.
 
@@ -20,6 +118,37 @@ draaien kan geen kwaad.
 `supabase/migrations/ALLES-IN-EEN.sql` is precies deze negen bestanden achter
 elkaar geplakt, voor als je alles in een keer in de SQL-editor wilt draaien. De
 losse bestanden blijven de bron; dat bestand is alleen een gemak.
+
+### Twee dingen om vóór het draaien te weten
+
+**1. De constraint op display_name kan falen.**
+`profiles_display_name_not_blank` weigert een lege string. Staat er al een rij
+met `display_name = ''` in plaats van `null`, dan faalt de ALTER. De client
+stuurt altijd `null`, dus dit kan alleen van een oude of met de hand gezette
+rij komen. Repareren:
+
+```sql
+update public.profiles set display_name = null where btrim(display_name) = '';
+```
+
+**2. Van de policies op `storage.objects` heb ik geen lijst.**
+De aangeleverde inventarisatie dekt de zes tabellen in `public`, niet
+`storage.objects`. Migratie `20260910110800` zet daar zeven policies neer met
+`drop policy if exists` op mijn eigen namen. Bestaan er al policies op die
+tabel met andere namen — bijvoorbeeld van een eerdere avatar-poging, want
+`profiles.avatar_url` bestond al — dan komen de mijne ernaast te staan en
+geldt dezelfde OR-regel. **Controleer dit vóór of direct na het draaien:**
+
+```sql
+select policyname, cmd, qual, with_check
+from pg_policies
+where schemaname = 'storage' and tablename = 'objects'
+order by policyname;
+```
+
+Staat er iets tussen dat ruimer is dan "eigen map" voor `avatars` of
+"kanaallid" voor `attachments`, dan is dat het echte plafond en niet wat mijn
+policies zeggen.
 
 ---
 
@@ -44,11 +173,21 @@ lijst die ik zou aflopen, met twee accounts (A en B) en één server.
 
 ### `messages` (`reply_to_id`, bewerken, verwijderen)
 
+- [ ] **Eerst, en dit is de belangrijkste controle van de hele ronde:** staat
+      er precies EEN update-policy op `messages`, en heeft die een `with
+      check`? Twee permissive policies worden met OR gecombineerd en dan geldt
+      de ruimste.
+
+      `select policyname, cmd, qual, with_check from pg_policies where tablename = 'messages';`
+
 - [ ] A bewerkt zijn eigen bericht. B ziet de nieuwe tekst en "(bewerkt)"
-      zonder te herladen (dit is een UPDATE over realtime — controleer in het
-      dashboard dat Realtime op `messages` ook UPDATE doorgeeft, niet alleen
-      INSERT).
+      zonder te herladen. Dat `pubupdate` aanstaat is geverifieerd op
+      10-09-2026, dus hier hoeft niets ingesteld te worden; werkt het toch
+      niet, dan is de publicatie niet de oorzaak.
 - [ ] B probeert een bericht van A te bewerken. Moet een 403 geven.
+- [ ] A verlaat een kanaal en probeert daarna een oud bericht van zichzelf
+      daar te bewerken. Moet nu falen: dat is de versmalling die deze migratie
+      toevoegt.
 - [ ] A verwijdert zijn bericht. Controleer **in de database** dat
       `ciphertext` echt leeg is en niet alleen `deleted_at` gezet is.
 - [ ] Een antwoord op een verwijderd bericht laat "origineel niet meer
@@ -110,7 +249,14 @@ lijst die ik zou aflopen, met twee accounts (A en B) en één server.
 
 ### `profiles` (weergavenaam, avatar, bijwerken)
 
+- [ ] **Eerst:** staat er precies EEN update-policy op `profiles`? Staan er
+      twee, dan doet het slot op de publieke sleutel niets.
+
+      `select policyname, cmd, qual, with_check from pg_policies where tablename = 'profiles';`
+
 - [ ] A zet een weergavenaam en avatar. B ziet ze.
+- [ ] A heeft een weergavenaam en zet die weer leeg. Moet lukken (de client
+      stuurt `null`, niet een lege string).
 - [ ] **De belangrijkste:** A probeert via een REST-call zijn eigen
       `public_key` of `key_fingerprint` te wijzigen. Moet een 403 geven op
       `profile_key_unchanged`. Dit is het slot dat sleutelverificatie zinvol
@@ -160,7 +306,16 @@ lijst die ik zou aflopen, met twee accounts (A en B) en één server.
   ruimte die niemand opruimt. Een periodieke opruimtaak zou dit oplossen; die
   is er niet.
 - **De update-policy op `messages` staat per rij, niet per kolom.** De afzender
-  kan dus in principe `created_at` of `channel_id` van zijn eigen bericht
-  aanpassen. RLS kan geen kolommen afbakenen; alleen een trigger kan dat. Voor
-  nu is de PGP-handtekening wat authorschap bewijst, en die overleeft geen
-  gerommel met de inhoud.
+  kan dus in principe `created_at` van zijn eigen bericht aanpassen. RLS kan
+  geen kolommen afbakenen; alleen een trigger kan dat. Voor nu is de
+  PGP-handtekening wat authorschap bewijst, en die overleeft geen gerommel met
+  de inhoud.
+- **`channel_id` wordt niet op zijn oude waarde vastgezet.** De `with check`
+  eist wel dat je lid bent van het doelkanaal, dus een bericht kan niet in een
+  kanaal belanden waar de afzender niet in zit. Maar verplaatsen tussen twee
+  kanalen waar hij beide in zit, kan via een REST-call. Een `with check` kan
+  niet naar de vorige waarde van een rij kijken, dus dit dichtzetten vraagt een
+  trigger. Genoteerd, niet gebouwd: geen scherm doet het, en een extra trigger
+  was niet gevraagd.
+- **Van `storage.objects` is de bestaande policy-lijst onbekend.** Zie de
+  controlequery in de inleiding hierboven.

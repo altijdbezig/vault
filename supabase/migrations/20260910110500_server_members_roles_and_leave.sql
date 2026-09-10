@@ -7,6 +7,10 @@
 -- Admin aanwijzen of terugzetten naar member. Een admin kan dit niet: dan kan
 -- een admin zichzelf tot owner promoveren en is het verschil tussen de twee
 -- rollen weg.
+--
+-- Productie heeft (nagekeken 10-09-2026) GEEN update-policy op
+-- server_members, dus deze is de enige en komt niet naast iets anders. Zonder
+-- hem kan er geen admin aangewezen worden en kan eigendom niet overgedragen.
 drop policy if exists "eigenaar wijzigt rollen" on public.server_members;
 create policy "eigenaar wijzigt rollen"
   on public.server_members for update
@@ -18,16 +22,32 @@ create policy "eigenaar wijzigt rollen"
 -- Vertrekken en verwijderd worden
 -- ---------------------------------------------------------------------------
 
--- Twee gevallen: je eigen rij (vertrekken) of de eigenaar die iemand
--- verwijdert. Extra permissive policy; een bestaande policy die alleen
--- "user_id = auth.uid()" toestaat blijft staan en wordt met OR gecombineerd.
+-- LET OP: dit VERVANGT de bestaande policy.
+--
+-- Productie heeft al "jezelf verwijderen uit server", die alleen je eigen rij
+-- toestaat. Zou deze ernaast komen, dan combineert Postgres ze met OR en mag
+-- "eigen rij OF eigenaar" zonder dat één van beide regels dat zegt. Sectie 4.3
+-- vraagt die uitbreiding (de eigenaar kan leden verwijderen), dus hij hoort
+-- erin — in één regel.
+--
+-- Wat behouden blijft: je eigen rij, dus vertrekken kan iedereen. Wat erbij
+-- komt: de eigenaar mag ook de rij van een ander weghalen. De eigenaar wordt
+-- langs twee wegen erkend, zodat hij er niet buiten valt als owner_id en
+-- server_members.role uit elkaar zouden lopen.
+drop policy if exists "jezelf verwijderen uit server" on public.server_members;
 drop policy if exists "vertrekken of verwijderd worden" on public.server_members;
-create policy "vertrekken of verwijderd worden"
+create policy "jezelf verwijderen uit server"
   on public.server_members for delete
   to authenticated
   using (
     user_id = auth.uid()
     or public.is_server_owner(server_id)
+    or exists (
+      select 1
+      from public.servers s
+      where s.id = server_members.server_id
+        and s.owner_id = auth.uid()
+    )
   );
 
 -- ---------------------------------------------------------------------------
@@ -93,23 +113,40 @@ create trigger server_members_guard_last_owner
 -- opruimen, anders blijf je berichten ontvangen uit kanalen van een server
 -- waar je niet meer in zit.
 --
--- Je eigen rijen kon je al verwijderen. Wat er ontbrak is de eigenaar die
--- iemand verwijdert: die moet ook diens kanaallidmaatschappen weghalen, en de
--- bestaande policy staat alleen de eigen rij toe. Dit is dus een extra
--- permissive policy naast de bestaande.
+-- LET OP: dit VERVANGT de bestaande policy.
+--
+-- Dit is de enige tabel waar mijn oorspronkelijke aanname klopte: productie
+-- heeft "kanaal verlaten", die alleen je eigen rij toestaat, en de eigenaar
+-- kon dus niemand uit de kanalen van zijn server halen. Die uitbreiding is
+-- nodig voor 4.3 en 4.5 — maar ook hier in één regel in plaats van twee
+-- permissive policies naast elkaar.
+--
+-- Wat behouden blijft: je eigen rij, dus een groep verlaten en een server
+-- verlaten blijven werken. Wat erbij komt: de eigenaar van de server waar het
+-- kanaal bij hoort.
 --
 -- Alleen voor serverkanalen. Een groep is geen server en heeft geen eigenaar
 -- die er iemand uit kan zetten.
+drop policy if exists "kanaal verlaten" on public.channel_members;
 drop policy if exists "eigenaar verwijdert kanaallidmaatschap" on public.channel_members;
-create policy "eigenaar verwijdert kanaallidmaatschap"
+create policy "kanaal verlaten"
   on public.channel_members for delete
   to authenticated
   using (
-    exists (
+    user_id = auth.uid()
+    or exists (
       select 1
       from public.channels c
       where c.id = channel_members.channel_id
         and c.server_id is not null
-        and public.is_server_owner(c.server_id)
+        and (
+          public.is_server_owner(c.server_id)
+          or exists (
+            select 1
+            from public.servers s
+            where s.id = c.server_id
+              and s.owner_id = auth.uid()
+          )
+        )
     )
   );
