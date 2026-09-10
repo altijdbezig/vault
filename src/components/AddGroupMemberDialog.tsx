@@ -40,11 +40,11 @@ export function AddGroupMemberDialog({ groupName, onClose, onAdd }: AddGroupMemb
   }
 
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-full w-full max-w-sm overflow-y-auto rounded-lg border border-ink-800 bg-ink-900 p-5 shadow-xl">
-        <h2 className="text-sm font-semibold text-ink-100">Lid toevoegen aan {groupName}</h2>
+    <div className="fixed inset-0 z-10 flex items-center justify-center bg-scrim p-4">
+      <div className="max-h-full w-full max-w-sm overflow-y-auto rounded-lg border border-subtle bg-raised p-5 shadow-xl">
+        <h2 className="text-sm font-semibold text-primary">Lid toevoegen aan {groupName}</h2>
 
-        <p className="mt-3 rounded border border-amber-900 bg-amber-950/40 px-3 py-2 text-xs leading-relaxed text-amber-200">
+        <p className="mt-3 rounded border border-warning-border bg-warning-soft px-3 py-2 text-xs leading-relaxed text-warning">
           Let op: dit lid kan de berichten van vóór nu <strong>niet</strong> lezen.
           Die zijn versleuteld met de sleutels van de leden op dat moment en dat
           is achteraf niet te veranderen. Voor hen blijft de geschiedenis leeg.

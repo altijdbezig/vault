@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthProvider } from './hooks/useAuth';
+import { SettingsProvider } from './hooks/useSettings';
 import './index.css';
 
 const container = document.getElementById('root');
@@ -14,11 +15,15 @@ if (!container) {
 createRoot(container).render(
   <StrictMode>
     <ErrorBoundary>
-      <BrowserRouter>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
-      </BrowserRouter>
+      {/* Settings sits above auth: the sign-in and unlock screens need a theme
+          too, and someone on light mode should not get a dark login screen. */}
+      <SettingsProvider>
+        <BrowserRouter>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </BrowserRouter>
+      </SettingsProvider>
     </ErrorBoundary>
   </StrictMode>,
 );

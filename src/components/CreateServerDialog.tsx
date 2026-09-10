@@ -60,9 +60,9 @@ export function CreateServerDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/60 p-6">
-      <div className="w-full max-w-sm rounded-lg border border-ink-800 bg-ink-900 p-5 shadow-xl">
-        <h2 className="text-sm font-semibold text-ink-100">Server</h2>
+    <div className="fixed inset-0 z-10 flex items-center justify-center bg-scrim p-6">
+      <div className="w-full max-w-sm rounded-lg border border-subtle bg-raised p-5 shadow-xl">
+        <h2 className="text-sm font-semibold text-primary">Server</h2>
 
         <form onSubmit={handleCreate} className="mt-4 flex flex-col gap-3">
           <Field
@@ -78,9 +78,9 @@ export function CreateServerDialog({
         </form>
 
         <div className="my-4 flex items-center gap-3">
-          <div className="h-px flex-1 bg-ink-800" />
-          <span className="text-xs uppercase tracking-wide text-ink-500">of</span>
-          <div className="h-px flex-1 bg-ink-800" />
+          <div className="h-px flex-1 bg-overlay" />
+          <span className="text-xs uppercase tracking-wide text-muted">of</span>
+          <div className="h-px flex-1 bg-overlay" />
         </div>
 
         <form onSubmit={handleJoin} className="flex flex-col gap-3">

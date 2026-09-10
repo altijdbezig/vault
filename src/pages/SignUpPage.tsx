@@ -33,7 +33,7 @@ export function SignUpPage({ onSwitchToSignIn }: { onSwitchToSignIn: () => void 
       title="Account aanmaken"
       subtitle="Je wachtwoord is ook de sleutel tot je berichten."
       footer={
-        <button type="button" onClick={onSwitchToSignIn} className="text-accent-500 hover:underline">
+        <button type="button" onClick={onSwitchToSignIn} className="text-accent hover:underline">
           Ik heb al een account
         </button>
       }
@@ -64,7 +64,7 @@ export function SignUpPage({ onSwitchToSignIn }: { onSwitchToSignIn: () => void 
           onChange={(event) => setPassword(event.target.value)}
         />
 
-        <p className="rounded border border-amber-900 bg-amber-950/40 px-3 py-2 text-xs leading-relaxed text-amber-200">
+        <p className="rounded border border-warning-border bg-warning-soft px-3 py-2 text-xs leading-relaxed text-warning">
           Dit wachtwoord versleutelt je privésleutel. Er is geen herstel: raak je
           het kwijt, dan zijn al je berichten definitief onleesbaar. Schrijf het op.
         </p>
@@ -76,7 +76,7 @@ export function SignUpPage({ onSwitchToSignIn }: { onSwitchToSignIn: () => void 
         </Button>
 
         {busy ? (
-          <p className="text-center text-xs text-ink-500">
+          <p className="text-center text-xs text-muted">
             Er wordt een PGP-sleutelpaar in je browser gegenereerd. Dit duurt even.
           </p>
         ) : null}

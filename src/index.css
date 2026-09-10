@@ -1,16 +1,101 @@
 @import "tailwindcss";
 
-@theme {
-  --color-ink-950: #0b0d10;
-  --color-ink-900: #14171c;
-  --color-ink-850: #1a1e25;
-  --color-ink-800: #22272f;
-  --color-ink-700: #2e343e;
-  --color-ink-500: #6b7280;
-  --color-ink-300: #b6bdc8;
-  --color-ink-100: #e7eaef;
-  --color-accent-500: #5865f2;
-  --color-accent-600: #4752c4;
+/*
+ * Lokale fonts. Geen Google Fonts CDN — zie de toelichting in tokens.css.
+ *
+ * Inter is de variabele versie, dus één bestand voor alle gewichten. Van
+ * JetBrains Mono alleen latin 400 en 500: dat is alles wat fingerprints en
+ * codeblokken nodig hebben, en de andere subsets (cyrillisch, grieks,
+ * vietnamees) zouden zes bestanden in dist zetten die niemand ooit opvraagt.
+ *
+ * Inter heeft geen los latin-bestand in de variabele variant. Dat kost niets:
+ * elke @font-face heeft een unicode-range, dus een browser haalt alleen de
+ * subset op die hij echt nodig heeft.
+ */
+@import "@fontsource-variable/inter/index.css";
+@import "@fontsource/jetbrains-mono/latin-400.css";
+@import "@fontsource/jetbrains-mono/latin-500.css";
+
+@import "./styles/tokens.css";
+
+/*
+ * De tokens doorgeven aan Tailwind.
+ *
+ * `@theme inline` en niet gewoon `@theme`: inline zet de waarde rechtstreeks
+ * in de utility (`background-color: var(--vault-bg-base)`) in plaats van er
+ * nog een laag eigen variabelen tussen te schuiven. Dat is precies wat we
+ * hier willen, want dan volgt elke utility automatisch het omschakelen van
+ * data-theme op <html>. Met een gewone @theme zou Tailwind de waarde één keer
+ * op :root vastzetten en zou lichte modus niet doorwerken.
+ *
+ * De ruimteschaal van Tailwind blijft zoals hij is: die staat al op 4px per
+ * stap, dus p-2 is 8px en px-3 is 12px. tokens.css publiceert dezelfde schaal
+ * nog een keer als --vault-space-* voor gebruik in echte CSS.
+ */
+@theme inline {
+  --color-base: var(--vault-bg-base);
+  --color-raised: var(--vault-bg-raised);
+  --color-overlay: var(--vault-bg-overlay);
+  --color-inset: var(--vault-bg-inset);
+  --color-scrim: var(--vault-bg-scrim);
+  --color-hover: var(--vault-bg-hover);
+  --color-active: var(--vault-bg-active);
+
+  --color-subtle: var(--vault-border-subtle);
+  --color-strong: var(--vault-border-strong);
+
+  --color-primary: var(--vault-text-primary);
+  --color-secondary: var(--vault-text-secondary);
+  --color-muted: var(--vault-text-muted);
+
+  --color-accent: var(--vault-accent);
+  --color-accent-hover: var(--vault-accent-hover);
+  --color-accent-on: var(--vault-accent-on);
+  --color-accent-soft: var(--vault-accent-soft);
+
+  --color-success: var(--vault-success);
+  --color-success-soft: var(--vault-success-soft);
+  --color-warning: var(--vault-warning);
+  --color-warning-soft: var(--vault-warning-soft);
+  --color-warning-border: var(--vault-warning-border);
+  --color-danger: var(--vault-danger);
+  --color-danger-hover: var(--vault-danger-hover);
+  --color-danger-soft: var(--vault-danger-soft);
+  --color-danger-border: var(--vault-danger-border);
+  --color-danger-on: var(--vault-danger-on);
+
+  --color-on-solid: var(--vault-text-on-solid);
+  --color-bubble-own: var(--vault-bubble-own);
+  --color-highlight: var(--vault-highlight);
+
+  --font-sans: var(--vault-font-sans);
+  --font-mono: var(--vault-font-mono);
+
+  --text-2xs: var(--vault-text-2xs);
+  --text-xs: var(--vault-text-xs);
+  --text-sm: var(--vault-text-sm);
+  --text-base: var(--vault-text-base);
+  --text-md: var(--vault-text-md);
+  --text-lg: var(--vault-text-lg);
+  --text-xl: var(--vault-text-xl);
+  --text-2xl: var(--vault-text-2xl);
+
+  --leading-tight: var(--vault-leading-tight);
+  --leading-snug: var(--vault-leading-snug);
+  --leading-normal: var(--vault-leading-normal);
+  --leading-relaxed: var(--vault-leading-relaxed);
+
+  --radius-sm: var(--vault-radius-sm);
+  --radius-md: var(--vault-radius-md);
+  --radius-lg: var(--vault-radius-lg);
+  --radius-xl: var(--vault-radius-xl);
+
+  --shadow-sm: var(--vault-shadow-sm);
+  --shadow-md: var(--vault-shadow-md);
+  --shadow-lg: var(--vault-shadow-lg);
+
+  --default-transition-duration: var(--vault-duration);
+  --default-transition-timing-function: var(--vault-ease);
 }
 
 html,
@@ -36,10 +121,120 @@ body {
 /* Never let a page rubber-band: the conversation does its own scrolling. */
 body {
   overscroll-behavior: none;
+  background-color: var(--vault-bg-base);
+  color: var(--vault-text-primary);
+  font-family: var(--vault-font-sans);
+  font-size: var(--vault-text-base);
+  line-height: var(--vault-leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-body {
-  background-color: var(--color-ink-950);
-  color: var(--color-ink-100);
-  font-family: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+/*
+ * Eén focus-ring voor de hele app.
+ *
+ * :focus-visible en niet :focus, zodat een muisklik op een knop geen ring
+ * achterlaat maar tabben er wel altijd een geeft. Dit staat hier globaal
+ * zodat een nieuwe component hem niet kan vergeten — er is geen component
+ * die zelf een ring hoeft te regelen.
+ */
+:focus-visible {
+  outline: var(--vault-focus-width) solid var(--vault-focus-color);
+  outline-offset: var(--vault-focus-offset);
+  border-radius: var(--vault-radius-sm);
+}
+
+/* Binnen een invoerveld ziet een offset-ring eruit als een dubbele rand. */
+input:focus-visible,
+textarea:focus-visible {
+  outline-offset: 0;
+}
+
+::selection {
+  background-color: var(--vault-accent-soft);
+  color: var(--vault-text-primary);
+}
+
+/*
+ * Scrollbars.
+ *
+ * De standaard-scrollbar van Windows is een lichtgrijze balk die in een
+ * donkere interface schreeuwt. Dun en in de randkleur maakt hem onderdeel van
+ * het paneel. scrollbar-* wordt door Firefox en Chromium begrepen; oudere
+ * WebKit valt terug op de ::-webkit-regels eronder.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--vault-border-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--vault-border-strong);
+  border: 3px solid transparent;
+  border-radius: var(--vault-radius-full);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--vault-text-muted);
+}
+
+/*
+ * Skeletons in plaats van spinners.
+ *
+ * Een spinner zegt "wacht", een skeleton zegt "hier komen drie regels". Bij
+ * een lijst die je al kent is dat het verschil tussen langzaam en vlot voelen.
+ * De animatie is een verschuivende glans en geen pulserende opacity: pulseren
+ * trekt de aandacht naar het wachten toe.
+ */
+@keyframes vault-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.vault-skeleton {
+  background-image: linear-gradient(
+    90deg,
+    var(--vault-bg-raised) 0%,
+    var(--vault-bg-hover) 40%,
+    var(--vault-bg-raised) 80%
+  );
+  background-size: 200% 100%;
+  animation: vault-shimmer 1.4s linear infinite;
+  border-radius: var(--vault-radius-sm);
+}
+
+/*
+ * Het kort oplichten van een bericht waar je naartoe gesprongen bent.
+ *
+ * Duurt langer dan 150ms en dat is met opzet: dit is geen overgang tussen twee
+ * toestanden maar een aanwijzing die je moet kunnen volgen met je ogen. Bij
+ * prefers-reduced-motion valt hij terug op één frame, en dan blijft de
+ * highlight gewoon even staan zonder te bewegen.
+ */
+@keyframes vault-flash {
+  0%,
+  55% {
+    background-color: var(--vault-highlight);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.vault-flash {
+  animation: vault-flash 1.6s var(--vault-ease);
 }

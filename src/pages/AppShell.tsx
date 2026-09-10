@@ -10,11 +10,13 @@ import { ErrorNotice } from '../components/ErrorNotice';
 import { Fingerprint } from '../components/Fingerprint';
 import { NewDmDialog } from '../components/NewDmDialog';
 import { NewGroupDialog } from '../components/NewGroupDialog';
+import { SegmentedControl } from '../components/SegmentedControl';
 import { ServerRail } from '../components/ServerRail';
 import { useAuth } from '../hooks/useAuth';
 import { useChannels } from '../hooks/useChannels';
 import { useIsWideScreen } from '../hooks/useMediaQuery';
 import { useServerChannels, useServers } from '../hooks/useServers';
+import { useSettings } from '../hooks/useSettings';
 import { useUnread } from '../hooks/useUnread';
 import { describeError } from '../lib/errorMessages';
 import { inviteLinkFor } from '../lib/invite';
@@ -74,6 +76,7 @@ export function AppShell() {
   } = useChannels();
   const { servers, createServer, joinServer } = useServers();
   const { counts: unread, serverHasUnread, setActiveChannel } = useUnread();
+  const { settings, update } = useSettings();
   const wide = useIsWideScreen();
 
   const activeServer = servers.find((server) => server.id === activeServerId) ?? null;
@@ -228,11 +231,11 @@ export function AppShell() {
         <div className="w-full max-w-sm text-center">
           {joinError ? (
             <>
-              <h1 className="text-sm font-semibold text-ink-100">
+              <h1 className="text-sm font-semibold text-primary">
                 Deze uitnodiging werkt niet
               </h1>
-              <p className="mt-2 text-sm leading-relaxed text-ink-500">{joinError}</p>
-              <p className="mt-2 text-xs leading-relaxed text-ink-500">
+              <p className="mt-2 text-sm leading-relaxed text-muted">{joinError}</p>
+              <p className="mt-2 text-xs leading-relaxed text-muted">
                 Vraag degene die hem stuurde om een nieuwe link, of om het
                 server-id.
               </p>
@@ -247,7 +250,7 @@ export function AppShell() {
               </Button>
             </>
           ) : (
-            <p className="text-sm text-ink-500">Bezig met lid worden…</p>
+            <p className="text-sm text-muted">Bezig met lid worden…</p>
           )}
         </div>
       </div>
@@ -262,7 +265,7 @@ export function AppShell() {
           type="button"
           aria-label="Serverlijst sluiten"
           onClick={() => setShowRail(false)}
-          className="absolute inset-0 z-20 bg-black/60 md:hidden"
+          className="absolute inset-0 z-20 bg-scrim md:hidden"
         />
       ) : null}
 
@@ -291,18 +294,18 @@ export function AppShell() {
       </div>
 
       <aside
-        className={`${activeChannelId ? 'hidden md:flex' : 'flex'} w-full flex-col border-r border-ink-800 bg-ink-900 md:w-60 md:shrink-0`}
+        className={`${activeChannelId ? 'hidden md:flex' : 'flex'} w-full flex-col border-r border-subtle bg-raised md:w-60 md:shrink-0`}
       >
         <button
           type="button"
           onClick={() => setShowRail(true)}
-          className="flex min-h-11 items-center gap-2 border-b border-ink-800 px-3 text-left text-sm text-ink-300 hover:bg-ink-850 md:hidden"
+          className="flex min-h-11 items-center gap-2 border-b border-subtle px-3 text-left text-sm text-secondary hover:bg-hover md:hidden"
         >
           <span aria-hidden="true">☰</span> Servers
           {dmUnreadTotal > 0 || servers.some((server) => serverHasUnread(server.id)) ? (
             <span
               aria-label="ongelezen elders"
-              className="h-2 w-2 rounded-full bg-accent-500"
+              className="h-2 w-2 rounded-full bg-accent"
             />
           ) : null}
         </button>
@@ -332,19 +335,30 @@ export function AppShell() {
           />
         )}
 
-        <div className="border-t border-ink-800 p-2">
+        <div className="border-t border-subtle p-2">
           <button
             type="button"
             onClick={() => setShowKeyPanel((open) => !open)}
-            className="min-h-11 w-full truncate rounded px-2 py-1.5 text-left text-sm text-ink-300 hover:bg-ink-850"
+            className="min-h-11 w-full truncate rounded px-2 py-1.5 text-left text-sm text-secondary hover:bg-hover"
           >
-            {profile?.username} <span className="text-ink-500">· sleutel</span>
+            {profile?.username} <span className="text-muted">· sleutel</span>
           </button>
 
           {showKeyPanel ? (
-            <div className="mt-2 rounded border border-ink-800 bg-ink-850 p-2">
+            <div className="mt-2 rounded-lg border border-subtle bg-overlay p-2.5">
+              <SegmentedControl
+                legend="Thema"
+                value={settings.theme}
+                onChange={(theme) => update('theme', theme)}
+                options={[
+                  { value: 'system', label: 'Systeem' },
+                  { value: 'dark', label: 'Donker' },
+                  { value: 'light', label: 'Licht' },
+                ]}
+              />
+              <div className="my-2.5 h-px bg-subtle" />
               {profile ? <Fingerprint value={profile.fingerprint} /> : null}
-              <p className="mt-2 text-xs leading-relaxed text-ink-500">
+              <p className="mt-2 text-xs leading-relaxed text-muted">
                 Vergelijk deze vingerafdruk buiten Vault om met je gesprekspartners.
               </p>
               <div className="mt-2 flex flex-col gap-1">
@@ -391,7 +405,7 @@ export function AppShell() {
           }
         />
       ) : (
-        <section className="hidden flex-1 items-center justify-center bg-ink-950 p-6 text-center text-sm text-ink-500 md:flex">
+        <section className="hidden flex-1 items-center justify-center bg-base p-6 text-center text-sm text-muted md:flex">
           <div>
             <ErrorNotice message={dmError ?? serverError} />
             <p className="mt-2">

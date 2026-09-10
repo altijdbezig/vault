@@ -1,0 +1,275 @@
+/*
+ * Vault design tokens.
+ *
+ * Eén bestand, en het is de enige plek waar een kleur, een afstand, een radius
+ * of een schaduw een waarde krijgt. Componenten noemen alleen namen. Grep op
+ * een hex in src/components of src/pages hoort niets op te leveren.
+ *
+ * De richting: grafiet, dicht, koel. Vault gaat over beslotenheid, en dat zit
+ * in het materiaal — bijna-zwarte lagen die nauwelijks van elkaar verschillen,
+ * dunne randen, en één accentkleur die alleen gebruikt wordt waar je echt moet
+ * klikken. Geen slotjes, geen paars.
+ *
+ * Het accent is petrol: blauwgroen, ontzadigd. Niet het blurple van Discord,
+ * niet het hemelsblauw van Telegram, en ver genoeg van groen/amber/rood zodat
+ * "dit kun je aanklikken" nooit te verwarren is met "dit ging goed", "let op"
+ * of "dit gaat stuk".
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* -----------------------------------------------------------------------
+   * Kleurlagen — donker
+   *
+   * Vier vlakken die nauwelijks van elkaar verschillen. Dat is opzet: diepte
+   * komt uit randen en ruimte, niet uit contrast tussen panelen. Een chatapp
+   * waar elk paneel een andere grijstint heeft, leest als een dashboard.
+   * --------------------------------------------------------------------- */
+  --vault-bg-base: #0e1114;
+  --vault-bg-raised: #15191e;
+  --vault-bg-overlay: #1c2128;
+  /* Voor invoervelden en codeblokken: dieper dan de basis, zodat een veld
+   * eruit ziet als een gat en niet als een knop. */
+  --vault-bg-inset: #0a0c0f;
+  /* Vlak achter een modal. Niet zwart: puur zwart over grafiet leest als een
+   * defect scherm. */
+  --vault-bg-scrim: rgb(4 6 8 / 0.72);
+  /* Actieve rij in een lijst, en hover. Twee stappen, geen tien. */
+  --vault-bg-hover: #1f252c;
+  --vault-bg-active: #262e37;
+
+  --vault-border-subtle: #232a32;
+  --vault-border-strong: #313a45;
+
+  --vault-text-primary: #e6eaee;
+  --vault-text-secondary: #a8b3bf;
+  --vault-text-muted: #6b7783;
+
+  --vault-accent: #35a0bb;
+  --vault-accent-hover: #48b3cd;
+  /* Tekst op een accentvlak. In het donker is dat bijna-zwart: wit op petrol
+   * haalt geen 4.5:1, bijna-zwart wel. */
+  --vault-accent-on: #04161c;
+  /* Het accent op 12% voor gevulde-maar-rustige vlakken (actieve tab, badge
+   * achtergrond). color-mix zou hier ook kunnen, maar een vaste waarde is
+   * voorspelbaarder over beide thema's. */
+  --vault-accent-soft: rgb(53 160 187 / 0.14);
+  --vault-accent-ring: rgb(53 160 187 / 0.55);
+
+  --vault-success: #4fa972;
+  --vault-success-soft: rgb(79 169 114 / 0.14);
+  --vault-warning: #d19a3c;
+  --vault-warning-soft: rgb(209 154 60 / 0.13);
+  --vault-warning-border: rgb(209 154 60 / 0.32);
+  --vault-danger: #d9584c;
+  --vault-danger-hover: #e56c60;
+  --vault-danger-soft: rgb(217 88 76 / 0.13);
+  --vault-danger-border: rgb(217 88 76 / 0.34);
+  --vault-danger-on: #ffffff;
+
+  /* Voor een eigen bericht: nauwelijks anders dan de achtergrond. Telegram
+   * geeft je eigen berichten een eigen bel; hier is het een hint, want in een
+   * kanaal met acht mensen zou een bel per afzender een carnaval worden. */
+  --vault-bubble-own: rgb(53 160 187 / 0.07);
+  /* Het kort oplichten van een bericht waar je naartoe sprong. */
+  --vault-highlight: rgb(53 160 187 / 0.16);
+
+  /* Tekst op een zelf berekend gevuld vlak: de fallback-avatar krijgt zijn
+   * achtergrond uit een hash van het user-id (zie Avatar.tsx), en die HSL is
+   * zo gekozen dat wit erop altijd contrast haalt. Als token, zodat er ook
+   * hier geen kleur los in een component staat.
+   */
+  --vault-text-on-solid: #ffffff;
+
+  /* De kleur die de browser-chrome op mobiel meekrijgt. Staat hier zodat
+   * settings.ts hem kan uitlezen in plaats van de hex te herhalen. */
+  --vault-meta-theme: #0e1114;
+
+  /* -----------------------------------------------------------------------
+   * Ruimte — 4px-schaal
+   * --------------------------------------------------------------------- */
+  --vault-space-0: 0;
+  --vault-space-1: 4px;
+  --vault-space-2: 8px;
+  --vault-space-3: 12px;
+  --vault-space-4: 16px;
+  --vault-space-5: 20px;
+  --vault-space-6: 24px;
+  --vault-space-8: 32px;
+  --vault-space-10: 40px;
+  --vault-space-12: 48px;
+  --vault-space-16: 64px;
+
+  /* Minimale maat van iets dat een vinger moet kunnen raken. Staat hier zodat
+   * het niet in elke component opnieuw 44px wordt getypt. */
+  --vault-tap-target: 44px;
+
+  /* -----------------------------------------------------------------------
+   * Radii
+   * --------------------------------------------------------------------- */
+  --vault-radius-sm: 4px;
+  --vault-radius-md: 6px;
+  --vault-radius-lg: 10px;
+  --vault-radius-xl: 14px;
+  --vault-radius-full: 999px;
+
+  /* -----------------------------------------------------------------------
+   * Schaduwen
+   *
+   * Spaarzaam. In een donkere interface doet een schaduw bijna niets; wat
+   * werkt is een lichte rand erbovenop. Daarom zit die rand in de schaduw
+   * ingebakken.
+   * --------------------------------------------------------------------- */
+  --vault-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+  --vault-shadow-md: 0 4px 12px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(255 255 255 / 0.04);
+  --vault-shadow-lg: 0 16px 48px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.06);
+
+  /* -----------------------------------------------------------------------
+   * Focus
+   *
+   * Eén definitie voor de hele app. Een focus-ring die per component anders
+   * is, is een focus-ring die iemand ergens vergeten is.
+   * --------------------------------------------------------------------- */
+  --vault-focus-width: 2px;
+  --vault-focus-offset: 2px;
+  --vault-focus-color: var(--vault-accent);
+
+  /* -----------------------------------------------------------------------
+   * Typografie
+   *
+   * Inter voor de UI: hoge x-hoogte, leest goed op 13px, en heeft echte
+   * tabular figures voor de ongelezen-tellers. JetBrains Mono voor
+   * fingerprints en code: onderscheidt 0/O en 1/l/I, en dat is precies waar
+   * een fingerprint-vergelijking op stukloopt.
+   *
+   * Beide lokaal via @fontsource, geen Google Fonts CDN. Een privacy-app die
+   * bij elke paginalading een externe server aantikt met het IP van de lezer
+   * is een privacy-app die niet oplet.
+   * --------------------------------------------------------------------- */
+  --vault-font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --vault-font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', 'Consolas', monospace;
+
+  /*
+   * De schaal is relatief aan --vault-font-scale, zodat "lettergrootte" in de
+   * instellingen één variabele is in plaats van een zoekopdracht door de app.
+   * 1rem = 16px; de basis van de UI is 13.6px en dat is dicht zoals Discord.
+   */
+  --vault-font-scale: 1;
+  --vault-text-2xs: calc(0.625rem * var(--vault-font-scale));
+  --vault-text-xs: calc(0.6875rem * var(--vault-font-scale));
+  --vault-text-sm: calc(0.8125rem * var(--vault-font-scale));
+  --vault-text-base: calc(0.875rem * var(--vault-font-scale));
+  --vault-text-md: calc(0.9375rem * var(--vault-font-scale));
+  --vault-text-lg: calc(1.0625rem * var(--vault-font-scale));
+  --vault-text-xl: calc(1.25rem * var(--vault-font-scale));
+  --vault-text-2xl: calc(1.5rem * var(--vault-font-scale));
+
+  --vault-leading-tight: 1.25;
+  --vault-leading-snug: 1.4;
+  --vault-leading-normal: 1.55;
+  --vault-leading-relaxed: 1.65;
+
+  --vault-weight-normal: 400;
+  --vault-weight-medium: 500;
+  --vault-weight-semibold: 600;
+
+  /* -----------------------------------------------------------------------
+   * Beweging
+   *
+   * 150ms en niets langer. Een interface die je laat wachten op een animatie
+   * voelt langzaam, ook als hij snel is.
+   * --------------------------------------------------------------------- */
+  --vault-duration: 150ms;
+  --vault-ease: cubic-bezier(0.2, 0, 0.2, 1);
+
+  /* -----------------------------------------------------------------------
+   * Berichtdichtheid
+   *
+   * Wordt omgezet door data-density op <html>. Comfortabel is de default.
+   * --------------------------------------------------------------------- */
+  --vault-msg-gap: var(--vault-space-4);
+  --vault-msg-row-pad: 3px;
+}
+
+/*
+ * Licht.
+ *
+ * Geen omgekeerd donker: de lagen draaien om (de basis wordt het grijze vlak,
+ * panelen worden wit) en het accent gaat een paar stappen donkerder, anders
+ * haalt petrol op wit geen contrast. Wit op petrol kan hier wél, dus
+ * --vault-accent-on draait mee.
+ */
+html[data-theme='light'] {
+  color-scheme: light;
+
+  --vault-bg-base: #f4f6f8;
+  --vault-bg-raised: #ffffff;
+  --vault-bg-overlay: #ffffff;
+  --vault-bg-inset: #eceff3;
+  --vault-bg-scrim: rgb(16 20 24 / 0.42);
+  --vault-bg-hover: #e9edf1;
+  --vault-bg-active: #dfe5ea;
+
+  --vault-border-subtle: #e0e5ea;
+  --vault-border-strong: #c3ccd5;
+
+  --vault-text-primary: #12171c;
+  --vault-text-secondary: #4a555f;
+  --vault-text-muted: #6f7b86;
+
+  --vault-accent: #0f7089;
+  --vault-accent-hover: #0b5a70;
+  --vault-accent-on: #ffffff;
+  --vault-accent-soft: rgb(15 112 137 / 0.1);
+  --vault-accent-ring: rgb(15 112 137 / 0.45);
+
+  --vault-success: #2f7d4f;
+  --vault-success-soft: rgb(47 125 79 / 0.1);
+  --vault-warning: #96631a;
+  --vault-warning-soft: rgb(150 99 26 / 0.1);
+  --vault-warning-border: rgb(150 99 26 / 0.28);
+  --vault-danger: #b3392c;
+  --vault-danger-hover: #962f24;
+  --vault-danger-soft: rgb(179 57 44 / 0.09);
+  --vault-danger-border: rgb(179 57 44 / 0.28);
+  --vault-danger-on: #ffffff;
+
+  --vault-bubble-own: rgb(15 112 137 / 0.055);
+  --vault-highlight: rgb(15 112 137 / 0.13);
+
+  --vault-text-on-solid: #ffffff;
+  --vault-meta-theme: #f4f6f8;
+
+  --vault-shadow-sm: 0 1px 2px rgb(16 20 24 / 0.08);
+  --vault-shadow-md: 0 4px 12px rgb(16 20 24 / 0.1), 0 0 0 1px rgb(16 20 24 / 0.05);
+  --vault-shadow-lg: 0 16px 48px rgb(16 20 24 / 0.16), 0 0 0 1px rgb(16 20 24 / 0.07);
+}
+
+/* Compacte berichtdichtheid: minder lucht tussen groepen, en rijen die
+ * dichter op elkaar staan. Dit is de Discord-kant van de schuif. */
+html[data-density='compact'] {
+  --vault-msg-gap: var(--vault-space-2);
+  --vault-msg-row-pad: 1px;
+}
+
+/*
+ * Minder beweging.
+ *
+ * Niet "kortere animaties" maar echt nul. Iemand die dit aanzet heeft er
+ * meestal een reden voor die zwaarder weegt dan onze overgangen.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --vault-duration: 1ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}

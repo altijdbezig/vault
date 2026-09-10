@@ -36,10 +36,10 @@ export function CreateChannelDialog({ onClose, onCreate, onCreated }: CreateChan
   }
 
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/60 p-6">
-      <div className="w-full max-w-sm rounded-lg border border-ink-800 bg-ink-900 p-5 shadow-xl">
-        <h2 className="text-sm font-semibold text-ink-100">Kanaal aanmaken</h2>
-        <p className="mt-1 text-xs leading-relaxed text-ink-500">
+    <div className="fixed inset-0 z-10 flex items-center justify-center bg-scrim p-6">
+      <div className="w-full max-w-sm rounded-lg border border-subtle bg-raised p-5 shadow-xl">
+        <h2 className="text-sm font-semibold text-primary">Kanaal aanmaken</h2>
+        <p className="mt-1 text-xs leading-relaxed text-muted">
           Je bent zelf het eerste lid. Wie later toegevoegd wordt, kan de berichten
           van vóór dat moment niet lezen.
         </p>
@@ -53,15 +53,15 @@ export function CreateChannelDialog({ onClose, onCreate, onCreated }: CreateChan
             onChange={(event) => setName(event.target.value)}
           />
 
-          <p className="-mt-2 text-xs text-ink-500" aria-live="polite">
+          <p className="-mt-2 text-xs text-muted" aria-live="polite">
             {!touched ? (
               'Kleine letters, streepjes in plaats van spaties. De # hoef je niet te typen.'
             ) : normalized === '' ? (
-              <span className="text-amber-400">Hier blijft geen naam van over.</span>
+              <span className="text-warning">Hier blijft geen naam van over.</span>
             ) : (
               <>
                 Wordt aangemaakt als{' '}
-                <span className="font-mono text-ink-300">#{normalized}</span>
+                <span className="font-mono text-secondary">#{normalized}</span>
               </>
             )}
           </p>

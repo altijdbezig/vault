@@ -35,7 +35,13 @@ export default function App() {
   switch (status) {
     case 'loading':
       return (
-        <div className="flex min-h-full items-center justify-center text-sm text-ink-500">
+        // No spinner. This state lasts as long as one getSession() call, and a
+        // spinner that flashes for 80ms is noise; a line of text that happens
+        // to still be there after a second is information.
+        <div
+          role="status"
+          className="flex min-h-full items-center justify-center text-sm text-muted"
+        >
           Bezig met laden…
         </div>
       );

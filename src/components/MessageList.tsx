@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
+import { SkeletonMessages } from './Skeleton';
 import type { DisplayMessage } from '../hooks/useMessages';
 
 interface MessageListProps {
@@ -86,21 +87,21 @@ export function MessageList({
   }, []);
 
   if (loading) {
-    return <div className="flex-1 p-4 text-sm text-ink-500">Berichten laden…</div>;
+    return <SkeletonMessages />;
   }
 
   return (
     <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3">
       {messages.length === 0 ? (
-        <p className="text-sm text-ink-500">Nog geen berichten. Zeg iets.</p>
+        <p className="text-sm text-muted">Nog geen berichten. Zeg iets.</p>
       ) : null}
 
       {messages.length > 0 && loadingOlder ? (
-        <p className="py-2 text-center text-xs text-ink-500">Oudere berichten laden…</p>
+        <p className="py-2 text-center text-xs text-muted">Oudere berichten laden…</p>
       ) : null}
 
       {messages.length > 0 && reachedStart && !loadingOlder ? (
-        <p className="py-2 text-center text-xs text-ink-500">
+        <p className="py-2 text-center text-xs text-muted">
           Dit is het begin van het gesprek.
         </p>
       ) : null}
@@ -110,7 +111,7 @@ export function MessageList({
           <button
             type="button"
             onClick={onLoadOlder}
-            className="min-h-11 rounded px-3 py-2 text-xs text-ink-500 underline hover:text-ink-300"
+            className="min-h-11 rounded px-3 py-2 text-xs text-muted underline hover:text-secondary"
           >
             Oudere berichten laden
           </button>
@@ -127,46 +128,46 @@ export function MessageList({
           <article key={message.id} className={grouped ? 'px-1' : 'mt-3 px-1 first:mt-0'}>
             {grouped ? null : (
               <header className="flex items-baseline gap-2">
-                <span className="text-sm font-semibold text-ink-100">{message.senderName}</span>
-                <time className="text-xs text-ink-500">{formatTime(message.createdAt)}</time>
+                <span className="text-sm font-semibold text-primary">{message.senderName}</span>
+                <time className="text-xs text-muted">{formatTime(message.createdAt)}</time>
               </header>
             )}
 
             {message.unreadable ? (
-              <p className="text-sm italic text-ink-500">
+              <p className="text-sm italic text-muted">
                 Dit bericht is niet voor jou versleuteld.
               </p>
             ) : (
               <p
                 className={`whitespace-pre-wrap break-words text-sm leading-relaxed ${
-                  message.status === 'sent' ? 'text-ink-100' : 'text-ink-500'
+                  message.status === 'sent' ? 'text-primary' : 'text-muted'
                 }`}
               >
-                {message.text ?? <span className="italic text-ink-500">ontsleutelen…</span>}
+                {message.text ?? <span className="italic text-muted">ontsleutelen…</span>}
               </p>
             )}
 
             {message.signatureValid === false ? (
-              <p className="mt-0.5 text-xs text-amber-400">
+              <p className="mt-0.5 text-xs text-warning">
                 ⚠ De handtekening klopt niet. Dit bericht komt mogelijk niet van{' '}
                 {message.senderName}.
               </p>
             ) : null}
 
             {message.status === 'failed' ? (
-              <p className="mt-0.5 flex items-center gap-2 text-xs text-red-400">
+              <p className="mt-0.5 flex items-center gap-2 text-xs text-danger">
                 Versturen mislukt.
                 <button
                   type="button"
                   onClick={() => onRetry(message.id)}
-                  className="underline hover:text-red-300"
+                  className="underline hover:text-danger-hover"
                 >
                   Opnieuw proberen
                 </button>
                 <button
                   type="button"
                   onClick={() => onDismiss(message.id)}
-                  className="text-ink-500 underline hover:text-ink-300"
+                  className="text-muted underline hover:text-secondary"
                 >
                   Weggooien
                 </button>

@@ -35,7 +35,7 @@ export function MessageInput({ disabled = false, placeholder, onSend }: MessageI
   }
 
   return (
-    <div className="border-t border-ink-800 p-3">
+    <div className="border-t border-subtle p-3">
       <div className="flex items-end gap-2">
         <textarea
           rows={1}
@@ -45,18 +45,18 @@ export function MessageInput({ disabled = false, placeholder, onSend }: MessageI
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={handleKeyDown}
           aria-label="Bericht"
-          className="max-h-40 min-h-11 w-full resize-none rounded border border-ink-700 bg-ink-850 px-3 py-2.5 text-base text-ink-100 outline-none placeholder:text-ink-500 focus:border-accent-500 disabled:opacity-50 sm:text-sm"
+          className="max-h-40 min-h-11 w-full resize-none rounded border border-strong bg-overlay px-3 py-2.5 text-base text-primary outline-none placeholder:text-muted focus:border-accent disabled:opacity-50 sm:text-sm"
         />
         <button
           type="button"
           onClick={submit}
           disabled={disabled || value.trim().length === 0}
-          className="h-11 shrink-0 rounded bg-accent-500 px-4 text-sm font-medium text-white transition-colors hover:bg-accent-600 disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-11 shrink-0 rounded bg-accent px-4 text-sm font-medium text-accent-on transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
         >
           Stuur
         </button>
       </div>
-      <p className="mt-1 text-xs text-ink-500">
+      <p className="mt-1 text-xs text-muted">
         {touch
           ? 'Alles wordt versleuteld voordat het je browser verlaat.'
           : 'Enter verstuurt, Shift+Enter maakt een nieuwe regel. Alles wordt versleuteld voordat het je browser verlaat.'}

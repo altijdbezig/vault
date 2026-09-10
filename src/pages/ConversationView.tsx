@@ -62,29 +62,29 @@ export function ConversationView({
 
   return (
     <div className="relative flex min-w-0 flex-1">
-      <section className="flex min-w-0 flex-1 flex-col bg-ink-950">
-        <header className="border-b border-ink-800 px-2 py-2 md:px-4 md:py-2.5">
+      <section className="flex min-w-0 flex-1 flex-col bg-base">
+        <header className="border-b border-subtle px-2 py-2 md:px-4 md:py-2.5">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={onBack}
               aria-label="Terug naar de lijst"
-              className="-ml-1 flex h-11 w-9 shrink-0 items-center justify-center rounded text-ink-300 hover:bg-ink-800 md:hidden"
+              className="-ml-1 flex h-11 w-9 shrink-0 items-center justify-center rounded text-secondary hover:bg-hover md:hidden"
             >
               <span aria-hidden="true">‹</span>
             </button>
-            <span aria-hidden="true" className="text-ink-500">
+            <span aria-hidden="true" className="text-muted">
               {channelPrefix(channelType)}
             </span>
-            <h1 className="truncate text-sm font-semibold text-ink-100">{title}</h1>
+            <h1 className="truncate text-sm font-semibold text-primary">{title}</h1>
 
-            <span className="ml-auto hidden text-xs text-ink-500 sm:inline">
+            <span className="ml-auto hidden text-xs text-muted sm:inline">
               versleuteld voor {readerCount} {readerCount === 1 ? 'lid' : 'leden'}
             </span>
             <button
               type="button"
               onClick={() => setShowMembers((open) => !open)}
-              className="ml-auto min-h-11 rounded px-2 py-1 text-xs text-ink-500 hover:bg-ink-800 hover:text-ink-100 sm:ml-0"
+              className="ml-auto min-h-11 rounded px-2 py-1 text-xs text-muted hover:bg-hover hover:text-primary sm:ml-0"
             >
               {showMembers ? 'Leden verbergen' : 'Leden tonen'}
             </button>
@@ -92,7 +92,7 @@ export function ConversationView({
 
           {isGroup ? (
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-              <p className="min-w-0 flex-1 truncate text-xs text-ink-500">
+              <p className="min-w-0 flex-1 truncate text-xs text-muted">
                 {members.length === 0
                   ? 'Leden laden…'
                   : members.map((member) => member.username).join(', ')}
@@ -102,7 +102,7 @@ export function ConversationView({
                 <button
                   type="button"
                   onClick={onAddMember}
-                  className="min-h-11 rounded px-2 py-1 text-xs text-ink-300 hover:bg-ink-800 hover:text-ink-100"
+                  className="min-h-11 rounded px-2 py-1 text-xs text-secondary hover:bg-hover hover:text-primary"
                 >
                   Lid toevoegen
                 </button>
@@ -114,14 +114,14 @@ export function ConversationView({
                     <button
                       type="button"
                       onClick={onLeaveGroup}
-                      className="min-h-11 rounded px-2 py-1 text-xs text-red-400 hover:bg-ink-800"
+                      className="min-h-11 rounded px-2 py-1 text-xs text-danger hover:bg-hover"
                     >
                       Zeker weten?
                     </button>
                     <button
                       type="button"
                       onClick={() => setConfirmLeave(false)}
-                      className="min-h-11 rounded px-2 py-1 text-xs text-ink-500 hover:bg-ink-800"
+                      className="min-h-11 rounded px-2 py-1 text-xs text-muted hover:bg-hover"
                     >
                       Nee
                     </button>
@@ -130,7 +130,7 @@ export function ConversationView({
                   <button
                     type="button"
                     onClick={() => setConfirmLeave(true)}
-                    className="min-h-11 rounded px-2 py-1 text-xs text-ink-500 hover:bg-ink-800 hover:text-ink-100"
+                    className="min-h-11 rounded px-2 py-1 text-xs text-muted hover:bg-hover hover:text-primary"
                   >
                     Groep verlaten
                   </button>
@@ -143,7 +143,7 @@ export function ConversationView({
         {!connected ? (
           <p
             role="status"
-            className="bg-amber-950/60 px-4 py-1.5 text-center text-xs text-amber-200"
+            className="bg-warning-soft px-4 py-1.5 text-center text-xs text-warning"
           >
             Verbinding verbroken. Nieuwe berichten komen pas binnen als de
             verbinding terug is.
@@ -155,7 +155,7 @@ export function ConversationView({
         </div>
 
         {membersWithoutKey.length > 0 ? (
-          <p className="mx-4 mt-2 rounded border border-amber-900 bg-amber-950/40 px-3 py-2 text-xs leading-relaxed text-amber-200">
+          <p className="mx-4 mt-2 rounded border border-warning-border bg-warning-soft px-3 py-2 text-xs leading-relaxed text-warning">
             {membersWithoutKey.map((member) => member.username).join(', ')}{' '}
             {membersWithoutKey.length === 1 ? 'heeft' : 'hebben'} nog geen sleutel en
             kan je berichten niet lezen. Je verstuurt wel, maar niet aan{' '}
@@ -193,7 +193,7 @@ export function ConversationView({
             type="button"
             aria-label="Ledenlijst sluiten"
             onClick={() => setShowMembers(false)}
-            className="absolute inset-0 z-20 bg-black/60 md:hidden"
+            className="absolute inset-0 z-20 bg-scrim md:hidden"
           />
           <div className="absolute inset-y-0 right-0 z-30 flex w-72 max-w-[85%] md:static md:z-auto md:w-auto md:max-w-none">
             <MemberList members={members} currentUserId={currentUserId} />

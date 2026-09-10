@@ -53,7 +53,7 @@ export function UnlockPage() {
           onClick={() => {
             void signOut();
           }}
-          className="text-ink-500 hover:text-ink-300 hover:underline"
+          className="text-muted hover:text-secondary hover:underline"
         >
           Uitloggen
         </button>
@@ -73,7 +73,7 @@ export function UnlockPage() {
           <div className="flex flex-col gap-2">
             <label
               htmlFor="key-import"
-              className="text-xs font-semibold uppercase tracking-wide text-ink-300"
+              className="text-xs font-semibold uppercase tracking-wide text-secondary"
             >
               Plak je sleutel
             </label>
@@ -87,16 +87,16 @@ export function UnlockPage() {
               value={armored}
               onChange={(event) => setArmored(event.target.value)}
               placeholder="-----BEGIN PGP PRIVATE KEY BLOCK-----"
-              className="rounded border border-ink-700 bg-ink-900 px-3 py-2 font-mono text-sm text-ink-100 outline-none placeholder:text-ink-500 focus:border-accent-500"
+              className="rounded border border-strong bg-raised px-3 py-2 font-mono text-sm text-primary outline-none placeholder:text-muted focus:border-accent"
             />
-            <p className="text-xs leading-relaxed text-ink-500">
+            <p className="text-xs leading-relaxed text-muted">
               Open je back-upbestand, kopieer alles inclusief de BEGIN- en
               END-regels, en plak het hierboven.
             </p>
 
             <label
               htmlFor="key-file"
-              className="mt-2 text-xs font-semibold uppercase tracking-wide text-ink-300"
+              className="mt-2 text-xs font-semibold uppercase tracking-wide text-secondary"
             >
               of kies het bestand
             </label>
@@ -107,7 +107,7 @@ export function UnlockPage() {
               onChange={(event) => {
                 void handleFile(event);
               }}
-              className="text-xs text-ink-300 file:mr-3 file:min-h-11 file:rounded file:border-0 file:bg-ink-800 file:px-3 file:text-xs file:text-ink-100"
+              className="text-xs text-secondary file:mr-3 file:min-h-11 file:rounded file:border-0 file:bg-overlay file:px-3 file:text-xs file:text-primary"
             />
           </div>
         ) : null}
@@ -127,7 +127,7 @@ export function UnlockPage() {
           {busy ? 'Bezig…' : needsKeyImport ? 'Importeren en ontgrendelen' : 'Ontgrendelen'}
         </Button>
 
-        <p className="text-center text-xs leading-relaxed text-ink-500">
+        <p className="text-center text-xs leading-relaxed text-muted">
           {needsKeyImport
             ? 'Je bent nog ingelogd, maar op dit apparaat staat geen sleutel. Importeer je back-upbestand om verder te gaan.'
             : 'Je bent nog ingelogd, maar je sleutel staat alleen in het geheugen van deze pagina. Na een refresh moet je hem opnieuw ontgrendelen.'}

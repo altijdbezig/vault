@@ -55,9 +55,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBound
 
     return (
       <div className="flex h-full items-center justify-center p-6">
-        <div className="w-full max-w-sm rounded-lg border border-ink-800 bg-ink-900 p-5 text-center">
-          <h1 className="text-sm font-semibold text-ink-100">Er is iets misgegaan</h1>
-          <p className="mt-2 text-sm leading-relaxed text-ink-500">
+        <div className="w-full max-w-sm rounded-lg border border-subtle bg-raised p-5 text-center">
+          <h1 className="text-sm font-semibold text-primary">Er is iets misgegaan</h1>
+          <p className="mt-2 text-sm leading-relaxed text-muted">
             Vault is vastgelopen. Je berichten zijn niet weg: die staan versleuteld
             op de server, en je sleutel staat nog op dit apparaat. Herladen is
             genoeg.
@@ -67,11 +67,11 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBound
             onClick={() => {
               window.location.reload();
             }}
-            className="mt-4 min-h-11 w-full rounded bg-accent-500 px-3 py-2 text-sm font-medium text-white hover:bg-accent-600"
+            className="mt-4 min-h-11 w-full rounded bg-accent px-3 py-2 text-sm font-medium text-accent-on hover:bg-accent-hover"
           >
             Opnieuw laden
           </button>
-          <p className="mt-3 text-xs leading-relaxed text-ink-500">
+          <p className="mt-3 text-xs leading-relaxed text-muted">
             Blijft het gebeuren, dan staat er meer in de console van je browser.
           </p>
         </div>

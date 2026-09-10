@@ -47,10 +47,10 @@ export function NewGroupDialog({ onClose, onCreate, onCreated }: NewGroupDialogP
   }
 
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-full w-full max-w-sm overflow-y-auto rounded-lg border border-ink-800 bg-ink-900 p-5 shadow-xl">
-        <h2 className="text-sm font-semibold text-ink-100">Nieuwe groep</h2>
-        <p className="mt-1 text-xs leading-relaxed text-ink-500">
+    <div className="fixed inset-0 z-10 flex items-center justify-center bg-scrim p-4">
+      <div className="max-h-full w-full max-w-sm overflow-y-auto rounded-lg border border-subtle bg-raised p-5 shadow-xl">
+        <h2 className="text-sm font-semibold text-primary">Nieuwe groep</h2>
+        <p className="mt-1 text-xs leading-relaxed text-muted">
           Iedereen die je nu toevoegt kan meelezen vanaf het eerste bericht. Wie
           je later toevoegt, kan alles van vóór dat moment niet lezen.
         </p>
@@ -91,7 +91,7 @@ export function NewGroupDialog({ onClose, onCreate, onCreated }: NewGroupDialogP
             </div>
 
             {usernames.length === 0 ? (
-              <p className="text-xs text-ink-500">Nog niemand toegevoegd.</p>
+              <p className="text-xs text-muted">Nog niemand toegevoegd.</p>
             ) : (
               <ul className="flex flex-wrap gap-1.5">
                 {usernames.map((item) => (
@@ -100,10 +100,10 @@ export function NewGroupDialog({ onClose, onCreate, onCreated }: NewGroupDialogP
                       type="button"
                       onClick={() => removeUsername(item)}
                       title={`${item} weghalen`}
-                      className="flex min-h-9 items-center gap-1.5 rounded bg-ink-800 px-2 py-1 text-sm text-ink-100 hover:bg-ink-700"
+                      className="flex min-h-9 items-center gap-1.5 rounded bg-overlay px-2 py-1 text-sm text-primary hover:bg-active"
                     >
                       {item}
-                      <span aria-hidden="true" className="text-ink-500">
+                      <span aria-hidden="true" className="text-muted">
                         ×
                       </span>
                     </button>

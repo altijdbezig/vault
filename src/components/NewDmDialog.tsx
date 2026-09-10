@@ -31,10 +31,10 @@ export function NewDmDialog({ onClose, onStart, onStarted }: NewDmDialogProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/60 p-6">
-      <div className="w-full max-w-sm rounded-lg border border-ink-800 bg-ink-900 p-5 shadow-xl">
-        <h2 className="text-sm font-semibold text-ink-100">Nieuw gesprek</h2>
-        <p className="mt-1 text-xs text-ink-500">
+    <div className="fixed inset-0 z-10 flex items-center justify-center bg-scrim p-6">
+      <div className="w-full max-w-sm rounded-lg border border-subtle bg-raised p-5 shadow-xl">
+        <h2 className="text-sm font-semibold text-primary">Nieuw gesprek</h2>
+        <p className="mt-1 text-xs text-muted">
           Zoek op gebruikersnaam. Bestaat het gesprek al, dan open je het gewoon opnieuw.
         </p>
 

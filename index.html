@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="nl" class="dark">
+<html lang="nl" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <!-- viewport-fit=cover so the layout reaches under the notch; the safe
@@ -8,10 +8,61 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#0b0d10" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0e1114" />
     <meta name="description" content="Vault — end-to-end versleutelde chat." />
     <title>Vault</title>
+    <script>
+      /*
+       * De keuze donker/licht/systeem staat op <html> voordat er een pixel
+       * getekend is.
+       *
+       * Dit moet inline en synchroon in de <head>. Zou React dit doen, dan
+       * ziet iemand met lichte modus eerst een frame donkere app en daarna de
+       * omslag — en juist bij een app die je in het donker gebruikt is die
+       * flits het ergste van de twee.
+       *
+       * Leest dezelfde localStorage-sleutel als src/lib/settings.ts. Die
+       * sleutel en de vorm van het blob zijn dus op twee plekken bekend; dat
+       * is de prijs voor een eerste paint zonder flits. Een import zou hier
+       * een extra request kosten en precies dat probleem terugbrengen.
+       */
+      (function () {
+        try {
+          var raw = localStorage.getItem('vault:settings');
+          var saved = raw ? JSON.parse(raw) : {};
+          if (typeof saved !== 'object' || saved === null) {
+            saved = {};
+          }
+
+          var choice =
+            saved.theme === 'dark' || saved.theme === 'light' || saved.theme === 'system'
+              ? saved.theme
+              : 'system';
+          var resolved =
+            choice === 'system'
+              ? window.matchMedia('(prefers-color-scheme: light)').matches
+                ? 'light'
+                : 'dark'
+              : choice;
+          document.documentElement.setAttribute('data-theme', resolved);
+
+          if (saved.density === 'compact' || saved.density === 'comfortable') {
+            document.documentElement.setAttribute('data-density', saved.density);
+          }
+
+          if (typeof saved.fontScale === 'number' && saved.fontScale >= 0.85 && saved.fontScale <= 1.3) {
+            document.documentElement.style.setProperty('--vault-font-scale', String(saved.fontScale));
+          }
+
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) {
+            meta.setAttribute('content', resolved === 'light' ? '#f4f6f8' : '#0e1114');
+          }
+        } catch (error) {
+          /* Geblokkeerde localStorage is geen reden om de app niet te tonen. */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

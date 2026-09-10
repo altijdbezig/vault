@@ -32,7 +32,7 @@ export function SignInPage({ onSwitchToSignUp }: { onSwitchToSignUp: () => void 
       title="Inloggen"
       subtitle="Vault"
       footer={
-        <button type="button" onClick={onSwitchToSignUp} className="text-accent-500 hover:underline">
+        <button type="button" onClick={onSwitchToSignUp} className="text-accent hover:underline">
           Nog geen account? Aanmaken
         </button>
       }
@@ -61,7 +61,7 @@ export function SignInPage({ onSwitchToSignUp }: { onSwitchToSignUp: () => void 
           {busy ? 'Bezig…' : 'Inloggen'}
         </Button>
 
-        <p className="text-center text-xs leading-relaxed text-ink-500">
+        <p className="text-center text-xs leading-relaxed text-muted">
           Wachtwoord vergeten kan niet. Je wachtwoord ontsleutelt je berichten, dus
           niemand — ook wij niet — kan het resetten.
         </p>

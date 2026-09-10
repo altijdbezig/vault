@@ -24,7 +24,7 @@ function UnreadDot({ label }: { label: string }) {
   return (
     <span
       aria-label={label}
-      className="pointer-events-none absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-ink-950 bg-accent-500"
+      className="pointer-events-none absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-base bg-accent"
     />
   );
 }
@@ -47,7 +47,7 @@ export function ServerRail({
   return (
     <nav
       aria-label="Servers"
-      className="flex w-14 shrink-0 flex-col items-center gap-2 border-r border-ink-800 bg-ink-950 py-2"
+      className="flex w-14 shrink-0 flex-col items-center gap-2 border-r border-subtle bg-base py-2"
     >
       <div className="relative">
         <button
@@ -57,8 +57,8 @@ export function ServerRail({
           aria-current={dmActive ? 'page' : undefined}
           className={`flex h-11 w-11 items-center justify-center rounded-2xl text-sm font-semibold transition-colors ${
             dmActive
-              ? 'rounded-xl bg-accent-500 text-white'
-              : 'bg-ink-800 text-ink-300 hover:rounded-xl hover:bg-accent-500 hover:text-white'
+              ? 'rounded-xl bg-accent text-accent-on'
+              : 'bg-overlay text-secondary hover:rounded-xl hover:bg-accent-hover hover:text-accent-on'
           }`}
         >
           DM
@@ -66,11 +66,11 @@ export function ServerRail({
         {dmUnread > 0 && !dmActive ? <UnreadDot label="ongelezen gesprekken" /> : null}
       </div>
 
-      <div className="h-px w-8 bg-ink-800" />
+      <div className="h-px w-8 bg-overlay" />
 
       <ul className="flex flex-1 flex-col items-center gap-2 overflow-y-auto">
         {servers.length === 0 ? (
-          <li className="px-1 text-center text-[10px] leading-tight text-ink-500">
+          <li className="px-1 text-center text-2xs leading-tight text-muted">
             nog geen servers
           </li>
         ) : null}
@@ -84,8 +84,8 @@ export function ServerRail({
               aria-current={server.id === activeServerId ? 'page' : undefined}
               className={`flex h-11 w-11 items-center justify-center rounded-2xl text-xs font-semibold transition-colors ${
                 server.id === activeServerId
-                  ? 'rounded-xl bg-accent-500 text-white'
-                  : 'bg-ink-800 text-ink-300 hover:rounded-xl hover:bg-ink-700 hover:text-ink-100'
+                  ? 'rounded-xl bg-accent text-accent-on'
+                  : 'bg-overlay text-secondary hover:rounded-xl hover:bg-active hover:text-primary'
               }`}
             >
               {initials(server.name)}
@@ -99,7 +99,7 @@ export function ServerRail({
         type="button"
         onClick={onCreateServer}
         title="Server aanmaken of joinen"
-        className="flex h-11 w-11 items-center justify-center rounded-2xl bg-ink-800 text-lg text-ink-300 hover:rounded-xl hover:bg-ink-700 hover:text-ink-100"
+        className="flex h-11 w-11 items-center justify-center rounded-2xl bg-overlay text-lg text-secondary hover:rounded-xl hover:bg-active hover:text-primary"
       >
         +
       </button>
