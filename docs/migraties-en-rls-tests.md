@@ -14,7 +14,12 @@ uitlezen. Gevolgen voor hoe ze geschreven zijn:
 - Wat een policy niet kan (naar de vorige waarde van een rij kijken) staat in
   een trigger.
 
-Draai ze in bestandsvolgorde. Ze zijn los van elkaar herhaalbaar.
+Draai ze in bestandsvolgorde. Ze zijn los van elkaar herhaalbaar, dus twee keer
+draaien kan geen kwaad.
+
+`supabase/migrations/ALLES-IN-EEN.sql` is precies deze negen bestanden achter
+elkaar geplakt, voor als je alles in een keer in de SQL-editor wilt draaien. De
+losse bestanden blijven de bron; dat bestand is alleen een gemak.
 
 ---
 
