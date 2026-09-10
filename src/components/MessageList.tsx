@@ -1,9 +1,14 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
+import { MessageText } from './MessageText';
 import { SkeletonMessages } from './Skeleton';
 import type { DisplayMessage } from '../hooks/useMessages';
 
 interface MessageListProps {
   messages: DisplayMessage[];
+  /** Usernames in this channel, so a mention can be told from an at-sign. */
+  usernames: readonly string[];
+  /** Your own username, so a mention of you stands out. */
+  ownUsername: string | null;
   loading: boolean;
   loadingOlder: boolean;
   reachedStart: boolean;
@@ -27,6 +32,8 @@ function formatTime(iso: string): string {
 
 export function MessageList({
   messages,
+  usernames,
+  ownUsername,
   loading,
   loadingOlder,
   reachedStart,
@@ -138,13 +145,17 @@ export function MessageList({
                 Dit bericht is niet voor jou versleuteld.
               </p>
             ) : (
-              <p
-                className={`whitespace-pre-wrap break-words text-sm leading-relaxed ${
-                  message.status === 'sent' ? 'text-primary' : 'text-muted'
-                }`}
-              >
-                {message.text ?? <span className="italic text-muted">ontsleutelen…</span>}
-              </p>
+              <div className={message.status === 'sent' ? '' : 'opacity-60'}>
+                {message.text === null ? (
+                  <p className="text-sm italic text-muted">ontsleutelen…</p>
+                ) : (
+                  <MessageText
+                    text={message.text}
+                    usernames={usernames}
+                    ownUsername={ownUsername}
+                  />
+                )}
+              </div>
             )}
 
             {message.signatureValid === false ? (

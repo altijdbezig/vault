@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ErrorNotice } from '../components/ErrorNotice';
 import { MemberList } from '../components/MemberList';
 import { MessageInput } from '../components/MessageInput';
@@ -59,6 +59,13 @@ export function ConversationView({
 
   const readerCount = members.length - membersWithoutKey.length;
   const isGroup = channelType === 'group';
+
+  // Derived here rather than in MessageList: every message needs the same
+  // list, and recomputing it per row would parse the member list once per
+  // message on every render.
+  const usernames = useMemo(() => members.map((member) => member.username), [members]);
+  const ownUsername =
+    members.find((member) => member.userId === currentUserId)?.username ?? null;
 
   return (
     <div className="relative flex min-w-0 flex-1">
@@ -165,6 +172,8 @@ export function ConversationView({
 
         <MessageList
           messages={messages}
+          usernames={usernames}
+          ownUsername={ownUsername}
           loading={loading}
           loadingOlder={loadingOlder}
           reachedStart={reachedStart}

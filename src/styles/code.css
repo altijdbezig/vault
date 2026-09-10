@@ -1,0 +1,81 @@
+/*
+ * Syntax colours for code blocks.
+ *
+ * A theme of our own rather than one of the highlight.js stylesheets, for two
+ * reasons. The shipped themes are written for a light or a dark page and would
+ * need two imports plus a switch; and they use their own palette, which would
+ * put a second set of colours in an app whose whole point in tokens.css is
+ * that there is one.
+ *
+ * So: five roles, derived from the tokens, and everything else inherits the
+ * body colour. Code in a chat message is read, not edited — a rainbow does not
+ * help, telling a string from a keyword from a comment does.
+ *
+ * The hue offsets are applied with color-mix against the accent so light and
+ * dark both work from the same rules. Anything hljs emits that is not listed
+ * here simply renders in the normal text colour, which is a fine default and
+ * means the list never has to be exhaustive.
+ */
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--vault-text-muted);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-section,
+.hljs-doctag,
+.hljs-type,
+.hljs-name,
+.hljs-strong {
+  color: color-mix(in oklab, var(--vault-accent) 78%, var(--vault-text-primary));
+  font-weight: var(--vault-weight-medium);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-attribute,
+.hljs-meta .hljs-string {
+  color: var(--vault-success);
+}
+
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link,
+.hljs-meta,
+.hljs-selector-id,
+.hljs-title {
+  color: var(--vault-warning);
+}
+
+.hljs-deletion,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: var(--vault-danger);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: var(--vault-weight-semibold);
+}
+
+/* A diff is the one case where a background says more than a colour. */
+.hljs-addition {
+  background-color: var(--vault-success-soft);
+}
+
+.hljs-deletion {
+  background-color: var(--vault-danger-soft);
+}
