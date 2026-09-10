@@ -21,6 +21,27 @@ Object.defineProperty(globalThis, 'ArrayBuffer', {
 });
 
 /**
+ * jsdom has no scrollIntoView at all, not even a no-op.
+ *
+ * Three components use it to keep something in view -- the message list
+ * jumping to a reply, the command palette arrowing past the fold, the settings
+ * tabs. Without a stub they throw during an effect, which fails the test with
+ * a stack trace that says nothing about what was being tested.
+ *
+ * A no-op is the right stub: there is no layout in jsdom, so there is nothing
+ * to assert about scrolling anyway. What the tests care about is that the code
+ * around it runs.
+ */
+if (!Element.prototype.scrollIntoView) {
+  Object.defineProperty(Element.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: function scrollIntoView(): void {
+      /* no layout in jsdom, so nothing to do */
+    },
+  });
+}
+
+/**
  * jsdom ships a matchMedia that answers "no" to everything, so every
  * breakpoint in the app would read as the narrowest one. This evaluates the
  * two kinds of query the app actually asks: a min-width against

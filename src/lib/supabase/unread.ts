@@ -108,6 +108,27 @@ export function countsAsUnread(
 }
 
 /**
+ * Moves your read marker in every channel at once.
+ *
+ * One update over all your channel_members rows, which is what makes
+ * "mark everything read" a single request instead of one per channel. The
+ * where clause is your own user_id, and the update policy allows nothing
+ * else, so this cannot touch anybody else's markers even by accident.
+ */
+export async function markAllChannelsRead(at: string): Promise<void> {
+  const me = await currentUserId();
+
+  const { error } = await supabase
+    .from('channel_members')
+    .update({ last_read_at: at })
+    .eq('user_id', me);
+
+  if (error) {
+    throw error;
+  }
+}
+
+/**
  * Moves your read marker in a channel.
  *
  * The timestamp comes from the client, so a badly wrong clock could mark a

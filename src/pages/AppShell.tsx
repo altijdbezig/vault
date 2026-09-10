@@ -1,9 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useMatch, useNavigate } from 'react-router-dom';
 import { AddGroupMemberDialog } from '../components/AddGroupMemberDialog';
 import { Button } from '../components/Button';
 import { ChannelList } from '../components/ChannelList';
+import { CommandPalette } from '../components/CommandPalette';
+import type { CommandItem } from '../components/CommandPalette';
 import { ChannelSidebar } from '../components/ChannelSidebar';
+import { ContextMenu } from '../components/ContextMenu';
+import type { MenuItem } from '../components/ContextMenu';
 import { CreateChannelDialog } from '../components/CreateChannelDialog';
 import { CreateServerDialog } from '../components/CreateServerDialog';
 import { Avatar } from '../components/Avatar';
@@ -13,15 +17,19 @@ import { NewDmDialog } from '../components/NewDmDialog';
 import { NewGroupDialog } from '../components/NewGroupDialog';
 import { Modal } from '../components/Modal';
 import { ProfileCard } from '../components/ProfileCard';
+import { RenameChannelDialog } from '../components/RenameChannelDialog';
 import { ServerRail } from '../components/ServerRail';
 import { useAuth } from '../hooks/useAuth';
 import { useChannels } from '../hooks/useChannels';
 import { useIsWideScreen } from '../hooks/useMediaQuery';
+import { useMessageNotifications } from '../hooks/useMessageNotifications';
+import { useShortcuts } from '../hooks/useShortcuts';
 import { useServerChannels, useServers } from '../hooks/useServers';
 import { useUnread } from '../hooks/useUnread';
+import { channelPrefix } from '../lib/channelName';
 import { describeError } from '../lib/errorMessages';
 import { inviteTokenFromInput } from '../lib/invite';
-import type { ChannelType } from '../types';
+import type { ChannelSummary, ChannelType } from '../types';
 import { ConversationView } from './ConversationView';
 import { ServerSettingsDialog } from './ServerSettingsDialog';
 import { SettingsDialog } from './SettingsDialog';
@@ -76,6 +84,7 @@ export function AppShell() {
     startGroup,
     addToGroup,
     leaveGroup,
+    reload: reloadDmChannels,
   } = useChannels();
   const {
     servers,
@@ -87,7 +96,14 @@ export function AppShell() {
     leaveServer,
     transferOwnership,
   } = useServers();
-  const { counts: unread, serverHasUnread, setActiveChannel } = useUnread();
+  const {
+    counts: unread,
+    total: totalUnread,
+    serverHasUnread,
+    setActiveChannel,
+    markRead,
+    markAllRead,
+  } = useUnread();
   const wide = useIsWideScreen();
 
   const activeServer = servers.find((server) => server.id === activeServerId) ?? null;
@@ -113,6 +129,15 @@ export function AppShell() {
   const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showServerSettings, setShowServerSettings] = useState(false);
+  const [showPalette, setShowPalette] = useState(false);
+  /** The channel right-click menu: which items, and where the pointer was. */
+  const [channelMenu, setChannelMenu] = useState<{
+    items: MenuItem[];
+    x: number;
+    y: number;
+  } | null>(null);
+  /** A channel being renamed from the context menu. */
+  const [renaming, setRenaming] = useState<ChannelSummary | null>(null);
   const [confirmLeaveServer, setConfirmLeaveServer] = useState(false);
   /** The profile card that is open, by user id. */
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
@@ -231,6 +256,292 @@ export function AppShell() {
   const activeChannelType: ChannelType = activeChannel?.type ?? (dmMode ? 'dm' : 'text');
   const inGroup = activeChannelType === 'group';
 
+  /*
+   * Everything that can be jumped to, for the palette and for the
+   * notification labels.
+   *
+   * Only the active server's channels are in here. Loading every channel of
+   * every server would mean a query per server on startup for a list most
+   * people never open; the servers themselves are entries, so two keystrokes
+   * still get you anywhere.
+   */
+  const notifiableChannels = useMemo(
+    () => [
+      ...dmChannels.map((channel) => ({
+        id: channel.id,
+        label: channel.displayName || 'gesprek',
+        path: `/dm/${channel.id}`,
+      })),
+      ...serverChannels.map((channel) => ({
+        id: channel.id,
+        label: `#${channel.displayName}`,
+        path: `/server/${activeServerId ?? ''}/${channel.id}`,
+      })),
+    ],
+    [dmChannels, serverChannels, activeServerId],
+  );
+
+  useMessageNotifications({
+    channels: notifiableChannels,
+    activeChannelId,
+    onNavigate: (path) => navigate(path),
+  });
+
+  // The unread count in the tab title, so a background tab says something.
+  useEffect(() => {
+    document.title = totalUnread > 0 ? `(${totalUnread}) Vault` : 'Vault';
+  }, [totalUnread]);
+
+  /**
+   * The channel list the arrow keys move through.
+   *
+   * Whatever is in the sidebar right now, which is what makes Alt+Down mean
+   * "the next one down" rather than an order only the code knows.
+   */
+  const navigableChannels = dmMode ? dmChannels : serverChannels;
+
+  const stepChannel = useCallback(
+    (delta: number): void => {
+      if (navigableChannels.length === 0) {
+        return;
+      }
+
+      const index = navigableChannels.findIndex((channel) => channel.id === activeChannelId);
+      // Nothing open yet: step in from the end the user is heading towards.
+      const next =
+        index === -1
+          ? delta > 0
+            ? 0
+            : navigableChannels.length - 1
+          : (index + delta + navigableChannels.length) % navigableChannels.length;
+
+      const channel = navigableChannels[next];
+      if (!channel) {
+        return;
+      }
+      navigate(dmMode ? `/dm/${channel.id}` : `/server/${activeServerId}/${channel.id}`);
+    },
+    [navigableChannels, activeChannelId, dmMode, activeServerId, navigate],
+  );
+
+  const shortcutHandlers = useMemo(
+    () => ({
+      onPalette: () => setShowPalette(true),
+      onMarkAllRead: () => {
+        void markAllRead();
+      },
+      onMarkChannelRead: () => {
+        if (activeChannelId) {
+          void markRead(activeChannelId);
+        }
+      },
+      onPreviousChannel: () => stepChannel(-1),
+      onNextChannel: () => stepChannel(1),
+    }),
+    [markAllRead, markRead, activeChannelId, stepChannel],
+  );
+
+  useShortcuts(shortcutHandlers);
+
+  /**
+   * What the palette offers.
+   *
+   * Conversations first, then the channels of the open server, then the
+   * servers, then the settings screens. That order is the answer to "what am
+   * I most likely looking for" -- and because equal fuzzy scores keep their
+   * input order, an empty query opens on the conversation list rather than on
+   * a settings entry.
+   */
+  const commandItems = useMemo<CommandItem[]>(() => {
+    const items: CommandItem[] = [];
+
+    for (const channel of dmChannels) {
+      const other = channel.members.find((member) => member.userId !== user?.id);
+      items.push({
+        id: `dm-${channel.id}`,
+        label: channel.displayName || 'gesprek',
+        detail: channel.type === 'group' ? `Groep · ${channel.members.length} leden` : 'Gesprek',
+        group: 'Gesprekken',
+        icon: channelPrefix(channel.type),
+        avatar:
+          channel.type === 'dm' && other
+            ? { userId: other.userId, name: other.username, url: null }
+            : undefined,
+        unread: unread[channel.id] ?? 0,
+        onSelect: () => navigate(`/dm/${channel.id}`),
+      });
+    }
+
+    if (activeServer) {
+      for (const channel of serverChannels) {
+        items.push({
+          id: `chan-${channel.id}`,
+          label: `#${channel.displayName}`,
+          detail: channel.description ?? activeServer.name,
+          group: activeServer.name,
+          icon: '#',
+          unread: unread[channel.id] ?? 0,
+          onSelect: () => navigate(`/server/${activeServer.id}/${channel.id}`),
+        });
+      }
+    }
+
+    for (const server of servers) {
+      items.push({
+        id: `srv-${server.id}`,
+        label: server.name,
+        detail: 'Server openen',
+        group: 'Servers',
+        avatar: { userId: server.id, name: server.name, url: server.iconUrl },
+        onSelect: () => navigate(`/server/${server.id}`),
+      });
+    }
+
+    items.push(
+      {
+        id: 'action-settings',
+        label: 'Instellingen',
+        detail: 'Profiel, uiterlijk, sleutel, meldingen, privacy',
+        group: 'Acties',
+        icon: '⚙',
+        onSelect: () => setShowSettings(true),
+      },
+      {
+        id: 'action-profile',
+        label: 'Mijn profiel en vingerafdruk',
+        detail: 'Toon je eigen sleutelvingerafdruk',
+        group: 'Acties',
+        icon: '👤',
+        onSelect: () => setProfileUserId(user?.id ?? null),
+      },
+      {
+        id: 'action-new-dm',
+        label: 'Nieuw gesprek',
+        detail: 'Begin een DM met iemand',
+        group: 'Acties',
+        icon: '+',
+        onSelect: () => setShowNewDm(true),
+      },
+      {
+        id: 'action-new-group',
+        label: 'Nieuwe groep',
+        detail: 'Een gesprek met meer dan twee mensen',
+        group: 'Acties',
+        icon: '+',
+        onSelect: () => setShowNewGroup(true),
+      },
+      {
+        id: 'action-new-server',
+        label: 'Server aanmaken of joinen',
+        detail: 'Met een uitnodigingslink of een code',
+        group: 'Acties',
+        icon: '+',
+        onSelect: () => setShowCreateServer(true),
+      },
+      {
+        id: 'action-mark-all-read',
+        label: 'Alles als gelezen markeren',
+        detail: 'Ctrl+Shift+A',
+        group: 'Acties',
+        icon: '✓',
+        onSelect: () => {
+          void markAllRead();
+        },
+      },
+    );
+
+    if (activeServer && canCreateChannel) {
+      items.push({
+        id: 'action-server-settings',
+        label: `Instellingen van ${activeServer.name}`,
+        detail: 'Naam, kanalen, leden, uitnodigingen',
+        group: 'Acties',
+        icon: '⚙',
+        onSelect: () => setShowServerSettings(true),
+      });
+    }
+
+    return items;
+  }, [
+    dmChannels,
+    serverChannels,
+    servers,
+    activeServer,
+    canCreateChannel,
+    unread,
+    user,
+    navigate,
+    markAllRead,
+  ]);
+
+  /**
+   * Builds the right-click menu for a channel row.
+   *
+   * The entries differ per kind of channel, and what is missing matters as
+   * much as what is there: a member without rights gets no rename entry
+   * rather than one that fails, and a DM cannot be renamed at all because its
+   * name is the other person.
+   */
+  const openChannelMenu = useCallback(
+    (channel: ChannelSummary, x: number, y: number): void => {
+      const items: MenuItem[] = [];
+
+      if ((unread[channel.id] ?? 0) > 0) {
+        items.push({
+          label: 'Markeren als gelezen',
+          icon: '✓',
+          onSelect: () => {
+            void markRead(channel.id);
+          },
+        });
+      }
+
+      const isServerChannel = channel.type === 'text';
+      const mayRename = isServerChannel ? canCreateChannel : channel.type === 'group';
+
+      if (mayRename) {
+        items.push({
+          label: isServerChannel ? 'Hernoemen en omschrijving' : 'Groep hernoemen',
+          icon: '✎',
+          onSelect: () => setRenaming(channel),
+        });
+      }
+
+      if (isServerChannel && canCreateChannel) {
+        items.push({
+          label: 'Kanaal verwijderen',
+          icon: '🗑',
+          danger: true,
+          // Straight into server settings rather than confirming here: that
+          // screen already has the confirmation, and the rest of the channel
+          // list for context.
+          onSelect: () => setShowServerSettings(true),
+        });
+      }
+
+      if (channel.type === 'group') {
+        items.push({
+          label: 'Groep verlaten',
+          icon: '↩',
+          danger: true,
+          onSelect: () => {
+            void (async () => {
+              await leaveGroup(channel.id);
+              navigate('/dm');
+            })();
+          },
+        });
+      }
+
+      if (items.length === 0) {
+        return;
+      }
+
+      setChannelMenu({ items, x, y });
+    },
+    [unread, markRead, canCreateChannel, leaveGroup, navigate],
+  );
+
   /** Mobile back button: from a conversation to the list it came from. */
   function goToList(): void {
     navigate(activeServerId ? `/server/${activeServerId}` : '/dm');
@@ -341,6 +652,7 @@ export function AppShell() {
             onSelect={(channelId) => navigate(`/server/${activeServer.id}/${channelId}`)}
             onCreateChannel={() => setShowCreateChannel(true)}
             unread={unread}
+            onContextMenu={openChannelMenu}
             onOpenSettings={() => setShowServerSettings(true)}
             onLeaveServer={
               // Absent for the owner on purpose: leaving would strand the
@@ -357,6 +669,7 @@ export function AppShell() {
             onNewDm={() => setShowNewDm(true)}
             onNewGroup={() => setShowNewGroup(true)}
             unread={unread}
+            onContextMenu={openChannelMenu}
           />
         )}
 
@@ -479,6 +792,35 @@ export function AppShell() {
           onJoin={joinServer}
           onCreated={(serverId) => navigate(`/server/${serverId}`)}
         />
+      ) : null}
+
+      {channelMenu ? (
+        <ContextMenu
+          label="Kanaalacties"
+          items={channelMenu.items}
+          x={channelMenu.x}
+          y={channelMenu.y}
+          onClose={() => setChannelMenu(null)}
+        />
+      ) : null}
+
+      {renaming ? (
+        <RenameChannelDialog
+          channel={renaming}
+          onClose={() => setRenaming(null)}
+          onSave={async (input) => {
+            await updateChannel(renaming.id, input);
+            // The DM and group list comes from a different hook, so a group
+            // rename needs its own nudge.
+            if (renaming.type !== 'text') {
+              await reloadDmChannels();
+            }
+          }}
+        />
+      ) : null}
+
+      {showPalette ? (
+        <CommandPalette items={commandItems} onClose={() => setShowPalette(false)} />
       ) : null}
 
       {showServerSettings && activeServer ? (

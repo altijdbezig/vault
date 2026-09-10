@@ -15,6 +15,11 @@ interface ChannelListProps {
   onNewGroup: () => void;
   /** Unread messages per channel id. */
   unread: Record<string, number>;
+  /**
+   * Right-click on a row. The menu itself is built by the caller, which is
+   * where the actions live; this only reports where and on what.
+   */
+  onContextMenu?: (channel: ChannelSummary, x: number, y: number) => void;
 }
 
 /**
@@ -32,6 +37,7 @@ export function ChannelList({
   onNewDm,
   onNewGroup,
   unread,
+  onContextMenu,
 }: ChannelListProps) {
   const { anyOnline } = usePresence();
 
@@ -67,6 +73,14 @@ export function ChannelList({
             <button
               type="button"
               onClick={() => onSelect(channel.id)}
+              onContextMenu={
+                onContextMenu
+                  ? (event) => {
+                      event.preventDefault();
+                      onContextMenu(channel, event.clientX, event.clientY);
+                    }
+                  : undefined
+              }
               className={`flex min-h-11 w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm ${
                 channel.id === activeId
                   ? 'bg-overlay text-primary'

@@ -9,17 +9,36 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import { subscribeToAllMessages } from '../lib/supabase/messages';
-import { countsAsUnread, fetchUnreadState, markChannelRead } from '../lib/supabase/unread';
+import {
+  countsAsUnread,
+  fetchUnreadState,
+  markAllChannelsRead,
+  markChannelRead,
+} from '../lib/supabase/unread';
 import type { MessageRow } from '../types';
 import { useAuth } from './useAuth';
 
 export interface UnreadContextValue {
   /** Unread messages per channel, never counting your own. */
   counts: Record<string, number>;
+  /** Everything unread, for the browser tab title. */
+  total: number;
   /** True when anything inside this server is unread. */
   serverHasUnread(serverId: string): boolean;
   /** Tells the provider which channel is on screen. */
   setActiveChannel(channelId: string | null): void;
+  /** Clears one channel's badge and moves its read marker now. */
+  markRead(channelId: string): Promise<void>;
+  /** Clears every badge in one request. */
+  markAllRead(): Promise<void>;
+  /**
+   * Registers a listener for incoming messages that count as unread.
+   *
+   * Exists so notifications can reuse the one subscription this provider
+   * already holds. A second subscribeToAllMessages would double the socket
+   * traffic to tell us something we already know.
+   */
+  subscribeToUnreadEvents(listener: (row: MessageRow) => void): () => void;
 }
 
 const UnreadContext = createContext<UnreadContextValue | null>(null);
@@ -59,6 +78,15 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
   const [focused, setFocused] = useState(isWindowFocused);
   /** Bumped whenever the read marker needs to move; see the effect below. */
   const [readNonce, setReadNonce] = useState(0);
+
+  /**
+   * Listeners registered through subscribeToUnreadEvents.
+   *
+   * A ref and not state: adding a listener must not re-render the provider,
+   * and the subscription callback below has to see the current set without
+   * being torn down and rebuilt.
+   */
+  const listenersRef = useRef(new Set<(row: MessageRow) => void>());
 
   // Read by the subscription callback, which is created once and must not
   // capture a stale active channel.
@@ -112,6 +140,14 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
       if (!countsAsUnread(row, userId, undefined)) {
         return;
       }
+
+      // Notified before the badge logic, and for every channel including the
+      // open one: whether a notification is appropriate depends on focus and
+      // on the mute setting, and that decision belongs to the listener.
+      for (const listener of listenersRef.current) {
+        listener(row);
+      }
+
       if (row.channel_id === activeRef.current && focusedRef.current) {
         // Already on screen: instead of a badge, move the read marker past it.
         setReadNonce((nonce) => nonce + 1);
@@ -162,9 +198,71 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
     setActiveChannelId(channelId);
   }, []);
 
+  const markRead = useCallback(
+    async (channelId: string): Promise<void> => {
+      // Optimistic, because this is a keyboard shortcut: the badge should go
+      // the moment you press it, not after a round trip.
+      setCounts((current) => (current[channelId] ? { ...current, [channelId]: 0 } : current));
+      try {
+        await markChannelRead(channelId, new Date().toISOString());
+      } catch (caught) {
+        console.error('Kon leesstatus niet bijwerken:', caught);
+        // Put the count back by reloading rather than guessing what it was:
+        // more messages may have arrived while the write was in flight.
+        void refresh();
+      }
+    },
+    [refresh],
+  );
+
+  const markAllRead = useCallback(async (): Promise<void> => {
+    const previous = counts;
+    setCounts((current) =>
+      Object.fromEntries(Object.keys(current).map((channelId) => [channelId, 0])),
+    );
+
+    try {
+      await markAllChannelsRead(new Date().toISOString());
+    } catch (caught) {
+      console.error('Kon niet alles als gelezen markeren:', caught);
+      setCounts(previous);
+    }
+  }, [counts]);
+
+  const subscribeToUnreadEvents = useCallback(
+    (listener: (row: MessageRow) => void): (() => void) => {
+      listenersRef.current.add(listener);
+      return () => {
+        listenersRef.current.delete(listener);
+      };
+    },
+    [],
+  );
+
+  const total = useMemo(
+    () => Object.values(counts).reduce((sum, count) => sum + count, 0),
+    [counts],
+  );
+
   const value = useMemo<UnreadContextValue>(
-    () => ({ counts, serverHasUnread, setActiveChannel }),
-    [counts, serverHasUnread, setActiveChannel],
+    () => ({
+      counts,
+      total,
+      serverHasUnread,
+      setActiveChannel,
+      markRead,
+      markAllRead,
+      subscribeToUnreadEvents,
+    }),
+    [
+      counts,
+      total,
+      serverHasUnread,
+      setActiveChannel,
+      markRead,
+      markAllRead,
+      subscribeToUnreadEvents,
+    ],
   );
 
   return <UnreadContext.Provider value={value}>{children}</UnreadContext.Provider>;

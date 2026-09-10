@@ -26,6 +26,8 @@ interface ChannelSidebarProps {
   onCreateChannel: () => void;
   /** Unread messages per channel id. */
   unread: Record<string, number>;
+  /** Right-click on a channel row; the caller builds the menu. */
+  onContextMenu?: (channel: ChannelSummary, x: number, y: number) => void;
 }
 
 export function ChannelSidebar({
@@ -40,6 +42,7 @@ export function ChannelSidebar({
   onSelect,
   onCreateChannel,
   unread,
+  onContextMenu,
 }: ChannelSidebarProps) {
   return (
     <nav className="flex h-full flex-col">
@@ -93,6 +96,14 @@ export function ChannelSidebar({
             <button
               type="button"
               onClick={() => onSelect(channel.id)}
+              onContextMenu={
+                onContextMenu
+                  ? (event) => {
+                      event.preventDefault();
+                      onContextMenu(channel, event.clientX, event.clientY);
+                    }
+                  : undefined
+              }
               className={`flex min-h-11 w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm ${
                 channel.id === activeChannelId
                   ? 'bg-overlay text-primary'
