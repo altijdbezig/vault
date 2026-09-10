@@ -70,6 +70,8 @@ function row(id: string, createdAt: string): MessageRow {
     sender_id: 'someone',
     ciphertext: 'x',
     created_at: createdAt,
+    edited_at: null,
+    reply_to_id: null,
     deleted_at: null,
   };
 }
@@ -116,10 +118,24 @@ describe('fetchMessages', () => {
     expect(result.map((message) => message.id)).toEqual(['a', 'b']);
   });
 
-  it('never returns deleted messages', async () => {
+  /*
+   * Dit gedrag is omgedraaid toen bewerken en verwijderen erbij kwamen.
+   *
+   * Eerder filterde deze query verwijderde rijen weg. Dat gaf een gat in het
+   * gesprek, antwoorden die naar niets verwezen en een pagingcursor die rijen
+   * oversloeg — en een gat leest als een bug, niet als een verwijdering. Nu
+   * komen ze mee met een lege ciphertext en rendert de UI ze als "bericht
+   * verwijderd".
+   *
+   * Het tellen van ongelezen berichten filtert ze nog wél weg; zie
+   * fetchUnreadState in unread.ts.
+   */
+  it('geeft verwijderde berichten wél terug, zodat er geen gat valt', async () => {
     state.pages = [[]];
+
     await fetchMessages(CHANNEL_ID);
-    expect(state.queries[0]?.filters['deleted_at']).toBeNull();
+
+    expect(state.queries[0]?.filters).not.toHaveProperty('deleted_at');
   });
 });
 

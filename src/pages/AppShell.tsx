@@ -393,6 +393,7 @@ export function AppShell() {
           channelId={activeChannelId}
           title={activeChannelTitle}
           channelType={activeChannelType}
+          description={activeChannel?.description ?? null}
           currentUserId={user?.id ?? null}
           onBack={goToList}
           onAddMember={inGroup ? () => setShowAddMember(true) : undefined}

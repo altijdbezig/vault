@@ -16,7 +16,10 @@ import { useMessages } from '../useMessages';
 const mocks = vi.hoisted(() => ({
   fetchMessages: vi.fn(),
   fetchMessagesSince: vi.fn(),
+  fetchMessagesByIds: vi.fn(),
   sendMessage: vi.fn(),
+  updateMessage: vi.fn(),
+  deleteMessage: vi.fn(),
   subscribeToChannel: vi.fn(),
   getPublicKeysForChannel: vi.fn(),
   lock: vi.fn(),
@@ -26,7 +29,10 @@ vi.mock('../../lib/supabase/messages', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   fetchMessages: mocks.fetchMessages,
   fetchMessagesSince: mocks.fetchMessagesSince,
+  fetchMessagesByIds: mocks.fetchMessagesByIds,
   sendMessage: mocks.sendMessage,
+  updateMessage: mocks.updateMessage,
+  deleteMessage: mocks.deleteMessage,
   subscribeToChannel: mocks.subscribeToChannel,
 }));
 
@@ -55,6 +61,8 @@ let members: ChannelMemberKey[];
 
 /** Emits a realtime INSERT into the hook under test. */
 let emit: (row: MessageRow) => void = () => {};
+/** Emits a realtime UPDATE (an edit or a deletion) into the hook under test. */
+let emitUpdate: (row: MessageRow) => void = () => {};
 /** Reports a realtime connection change to the hook under test. */
 let emitStatus: (status: 'connected' | 'disconnected') => void = () => {};
 let unsubscribe = vi.fn();
@@ -82,7 +90,9 @@ async function makeRow(
     channel_id: CHANNEL_ID,
     sender_id: sender.userId,
     created_at: createdAt,
+    edited_at: null,
     deleted_at: null,
+    reply_to_id: null,
     ciphertext: await encryptMessage({
       plaintext,
       recipientPublicKeys: recipients.map((identity) => identity.publicKey),
@@ -103,8 +113,17 @@ beforeAll(async () => {
       username: alice.username,
       publicKey: alice.publicKey,
       fingerprint: null,
+      displayName: null,
+      avatarUrl: null,
     },
-    { userId: bob.userId, username: bob.username, publicKey: bob.publicKey, fingerprint: null },
+    {
+      userId: bob.userId,
+      username: bob.username,
+      publicKey: bob.publicKey,
+      fingerprint: null,
+      displayName: null,
+      avatarUrl: null,
+    },
   ];
 });
 
@@ -121,14 +140,17 @@ beforeEach(() => {
       _channelId: string,
       onInsert: (row: MessageRow) => void,
       onStatus?: (status: 'connected' | 'disconnected') => void,
+      onUpdate?: (row: MessageRow) => void,
     ) => {
       emit = onInsert;
       emitStatus = onStatus ?? (() => {});
+      emitUpdate = onUpdate ?? (() => {});
       return unsubscribe;
     },
   );
   mocks.fetchMessages.mockResolvedValue([]);
   mocks.fetchMessagesSince.mockResolvedValue([]);
+  mocks.fetchMessagesByIds.mockResolvedValue([]);
   mocks.getPublicKeysForChannel.mockResolvedValue(members);
 });
 
@@ -215,7 +237,9 @@ describe('deduplication', () => {
         sender_id: alice.userId,
         ciphertext,
         created_at: '2026-09-08T11:00:00.000Z',
+        edited_at: null,
         deleted_at: null,
+        reply_to_id: null,
       };
       return sentRow;
     });
@@ -382,10 +406,19 @@ describe('server channels', () => {
       username: 'zonder-sleutel',
       publicKey: null,
       fingerprint: null,
+      displayName: null,
+      avatarUrl: null,
     };
     mocks.getPublicKeysForChannel.mockResolvedValue([
       ...members,
-      { userId: carol.userId, username: carol.username, publicKey: carol.publicKey, fingerprint: null },
+      {
+        userId: carol.userId,
+        username: carol.username,
+        publicKey: carol.publicKey,
+        fingerprint: null,
+        displayName: null,
+        avatarUrl: null,
+      },
       halfCreatedProfile,
     ]);
     mocks.sendMessage.mockImplementation(async (channelId: string, ciphertext: string) => ({
@@ -442,7 +475,14 @@ describe('server channels', () => {
     mocks.fetchMessages.mockResolvedValue([beforeCarol, afterCarol]);
     mocks.getPublicKeysForChannel.mockResolvedValue([
       ...members,
-      { userId: carol.userId, username: carol.username, publicKey: carol.publicKey, fingerprint: null },
+      {
+        userId: carol.userId,
+        username: carol.username,
+        publicKey: carol.publicKey,
+        fingerprint: null,
+        displayName: null,
+        avatarUrl: null,
+      },
     ]);
     setUnlockedKey(carol.privateKey);
 
@@ -629,5 +669,296 @@ describe('losing and regaining the realtime connection', () => {
     // Nothing was missed, so nothing is refetched.
     expect(mocks.fetchMessages).not.toHaveBeenCalled();
     expect(mocks.fetchMessagesSince).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * Bewerken.
+ *
+ * De vraag die hier bewaakt wordt is niet "wordt updateMessage aangeroepen"
+ * maar "wordt de nieuwe tekst opnieuw versleuteld, en voor wie". Een bewerking
+ * die de oude ciphertext laat staan of die versleutelt voor de leden van toen
+ * is stiller stuk dan een bewerking die faalt.
+ */
+describe('editing a message', () => {
+  it('re-encrypts the new text for the members as they are now', async () => {
+    const own = await makeRow('m1', alice, 'typfout', [alice, bob]);
+    mocks.fetchMessages.mockResolvedValue([own]);
+
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+    await waitFor(() => expect(result.current.messages[0]?.text).toBe('typfout'));
+
+    // Carol is er sinds het oorspronkelijke bericht bij gekomen.
+    mocks.getPublicKeysForChannel.mockResolvedValue([
+      ...members,
+      {
+        userId: carol.userId,
+        username: carol.username,
+        publicKey: carol.publicKey,
+        fingerprint: null,
+        displayName: null,
+        avatarUrl: null,
+      },
+    ]);
+
+    let stored = '';
+    mocks.updateMessage.mockImplementation(async (_id: string, ciphertext: string) => {
+      stored = ciphertext;
+      return { ...own, ciphertext, edited_at: '2026-09-08T12:00:00.000Z' };
+    });
+
+    await act(async () => {
+      await result.current.edit('m1', 'geen typfout meer');
+    });
+
+    // De opgeslagen ciphertext is nieuw, en niet de oude.
+    expect(stored).not.toBe(own.ciphertext);
+    expect(stored).toContain('BEGIN PGP MESSAGE');
+
+    // Carol kan hem lezen, dus er is versleuteld voor de huidige ledenlijst.
+    const forCarol = await decryptMessage({
+      ciphertext: stored,
+      privateKey: carol.privateKey,
+      senderPublicKey: alice.publicKey,
+    });
+    expect(forCarol.plaintext).toBe('geen typfout meer');
+    expect(forCarol.signatureValid).toBe(true);
+  });
+
+  it('shows the new text and the edited stamp without decrypting again', async () => {
+    const own = await makeRow('m1', alice, 'eerst', [alice, bob]);
+    mocks.fetchMessages.mockResolvedValue([own]);
+
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+    await waitFor(() => expect(result.current.messages[0]?.text).toBe('eerst'));
+
+    mocks.updateMessage.mockImplementation(async (_id: string, ciphertext: string) => ({
+      ...own,
+      ciphertext,
+      edited_at: '2026-09-08T12:00:00.000Z',
+    }));
+
+    await act(async () => {
+      await result.current.edit('m1', 'daarna');
+    });
+
+    await waitFor(() => {
+      expect(result.current.messages[0]?.text).toBe('daarna');
+      expect(result.current.messages[0]?.editedAt).toBe('2026-09-08T12:00:00.000Z');
+    });
+  });
+
+  it('ignores an empty edit instead of storing a blank message', async () => {
+    const own = await makeRow('m1', alice, 'blijft staan', [alice, bob]);
+    mocks.fetchMessages.mockResolvedValue([own]);
+
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+    await waitFor(() => expect(result.current.messages[0]?.text).toBe('blijft staan'));
+
+    await act(async () => {
+      await result.current.edit('m1', '   ');
+    });
+
+    expect(mocks.updateMessage).not.toHaveBeenCalled();
+    expect(result.current.messages[0]?.text).toBe('blijft staan');
+  });
+
+  it('picks up an edit from somebody else over realtime and drops the cache', async () => {
+    const theirs = await makeRow('m1', bob, 'oude tekst', [alice, bob]);
+    mocks.fetchMessages.mockResolvedValue([theirs]);
+
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+    await waitFor(() => expect(result.current.messages[0]?.text).toBe('oude tekst'));
+
+    const edited = {
+      ...theirs,
+      ciphertext: await encryptMessage({
+        plaintext: 'nieuwe tekst',
+        recipientPublicKeys: [alice.publicKey, bob.publicKey],
+        signingKey: bob.privateKey,
+      }),
+      edited_at: '2026-09-08T12:00:00.000Z',
+    };
+
+    await act(async () => {
+      emitUpdate(edited);
+    });
+
+    // Zonder het wissen van de cache zou hier nog "oude tekst" staan met een
+    // "(bewerkt)"-label eronder, en dat is erger dan geen bewerkingen.
+    await waitFor(() => expect(result.current.messages[0]?.text).toBe('nieuwe tekst'));
+    expect(result.current.messages[0]?.editedAt).toBe('2026-09-08T12:00:00.000Z');
+  });
+});
+
+describe('deleting a message', () => {
+  it('leaves a tombstone in place instead of a gap', async () => {
+    const own = await makeRow('m1', alice, 'weg hiermee', [alice, bob]);
+    const other = await makeRow('m2', bob, 'blijft', [alice, bob], '2026-09-08T10:05:00.000Z');
+    mocks.fetchMessages.mockResolvedValue([own, other]);
+
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+    await waitFor(() => expect(result.current.messages).toHaveLength(2));
+
+    mocks.deleteMessage.mockResolvedValue({
+      ...own,
+      ciphertext: '',
+      deleted_at: '2026-09-08T12:00:00.000Z',
+    });
+
+    await act(async () => {
+      await result.current.remove('m1');
+    });
+
+    await waitFor(() => {
+      // Nog steeds twee rijen: het bericht verdwijnt niet uit het gesprek.
+      expect(result.current.messages).toHaveLength(2);
+      expect(result.current.messages[0]?.deleted).toBe(true);
+      // En de tekst is weg, ook uit de lokale cache.
+      expect(result.current.messages[0]?.text).toBeNull();
+    });
+    expect(result.current.messages[1]?.text).toBe('blijft');
+  });
+
+  it('never hands an empty ciphertext to the crypto layer', async () => {
+    // Een verwijderd bericht heeft geen ciphertext meer. OpenPGP zou daarop
+    // gooien, en dat zou als een ontsleutelfout in de console belanden bij
+    // elke keer dat het gesprek geladen wordt.
+    const tombstone: MessageRow = {
+      id: 'm-verwijderd',
+      channel_id: CHANNEL_ID,
+      sender_id: bob.userId,
+      ciphertext: '',
+      created_at: '2026-09-08T10:00:00.000Z',
+      edited_at: null,
+      deleted_at: '2026-09-08T11:00:00.000Z',
+      reply_to_id: null,
+    };
+    mocks.fetchMessages.mockResolvedValue([tombstone]);
+
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+
+    await waitFor(() => expect(result.current.messages[0]?.deleted).toBe(true));
+    expect(result.current.messages[0]?.unreadable).toBe(false);
+    expect(errors).not.toHaveBeenCalled();
+
+    errors.mockRestore();
+  });
+});
+
+describe('replies', () => {
+  it('passes the reply target to the insert and keeps it on a retry', async () => {
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    mocks.sendMessage.mockRejectedValueOnce(new Error('netwerk weg'));
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await act(async () => {
+      await result.current.send('antwoordje', 'm-origineel');
+    });
+
+    expect(mocks.sendMessage).toHaveBeenLastCalledWith(
+      CHANNEL_ID,
+      expect.stringContaining('BEGIN PGP MESSAGE'),
+      'm-origineel',
+    );
+
+    const failed = result.current.messages.find((message) => message.status === 'failed');
+    expect(failed).toBeDefined();
+
+    mocks.sendMessage.mockImplementation(
+      async (channelId: string, ciphertext: string, replyToId: string | null) => ({
+        id: 'm-nieuw',
+        channel_id: channelId,
+        sender_id: alice.userId,
+        ciphertext,
+        created_at: '2026-09-08T11:00:00.000Z',
+        edited_at: null,
+        deleted_at: null,
+        reply_to_id: replyToId,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.retry(failed?.id ?? '');
+    });
+
+    // Een tweede poging antwoordt op hetzelfde bericht als de eerste.
+    expect(mocks.sendMessage).toHaveBeenLastCalledWith(
+      CHANNEL_ID,
+      expect.any(String),
+      'm-origineel',
+    );
+    errors.mockRestore();
+  });
+
+  it('fetches the original when it is not in the loaded page, and decrypts it', async () => {
+    const original = await makeRow(
+      'm-oud',
+      bob,
+      'de oorspronkelijke vraag',
+      [alice, bob],
+      '2026-09-01T10:00:00.000Z',
+    );
+    const answer: MessageRow = {
+      ...(await makeRow('m-nieuw', alice, 'het antwoord', [alice, bob], '2026-09-08T10:00:00.000Z')),
+      reply_to_id: 'm-oud',
+    };
+
+    mocks.fetchMessages.mockResolvedValue([answer]);
+    mocks.fetchMessagesByIds.mockResolvedValue([original]);
+
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+
+    await waitFor(() =>
+      expect(result.current.messages[0]?.replyTo?.text).toBe('de oorspronkelijke vraag'),
+    );
+    expect(mocks.fetchMessagesByIds).toHaveBeenCalledWith(['m-oud']);
+    expect(result.current.messages[0]?.replyTo?.senderName).toBe(bob.username);
+    // Het origineel zelf hoort niet in het gesprek te verschijnen.
+    expect(result.current.messages).toHaveLength(1);
+  });
+
+  it('does not fetch the original when it is already on screen', async () => {
+    const original = await makeRow('m-1', bob, 'vraag', [alice, bob], '2026-09-08T10:00:00.000Z');
+    const answer: MessageRow = {
+      ...(await makeRow('m-2', alice, 'antwoord', [alice, bob], '2026-09-08T10:01:00.000Z')),
+      reply_to_id: 'm-1',
+    };
+    mocks.fetchMessages.mockResolvedValue([original, answer]);
+
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+
+    await waitFor(() => expect(result.current.messages[1]?.replyTo?.text).toBe('vraag'));
+    expect(mocks.fetchMessagesByIds).not.toHaveBeenCalled();
+  });
+
+  it('marks the preview as deleted when the original was removed', async () => {
+    const tombstone: MessageRow = {
+      id: 'm-oud',
+      channel_id: CHANNEL_ID,
+      sender_id: bob.userId,
+      ciphertext: '',
+      created_at: '2026-09-01T10:00:00.000Z',
+      edited_at: null,
+      deleted_at: '2026-09-02T10:00:00.000Z',
+      reply_to_id: null,
+    };
+    const answer: MessageRow = {
+      ...(await makeRow('m-nieuw', alice, 'antwoord', [alice, bob])),
+      reply_to_id: 'm-oud',
+    };
+
+    mocks.fetchMessages.mockResolvedValue([answer]);
+    mocks.fetchMessagesByIds.mockResolvedValue([tombstone]);
+
+    const { result } = renderHook(() => useMessages(CHANNEL_ID));
+
+    await waitFor(() => expect(result.current.messages[0]?.replyTo?.deleted).toBe(true));
+    // Verwijderd is iets anders dan onvindbaar, en dat verschil moet zichtbaar
+    // blijven: het eerste is een keuze van de afzender, het tweede een gat.
+    expect(result.current.messages[0]?.replyTo?.missing).toBe(false);
   });
 });

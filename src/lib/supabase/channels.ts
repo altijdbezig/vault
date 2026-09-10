@@ -6,6 +6,7 @@ interface ChannelRow {
   id: string;
   type: ChannelType;
   name: string | null;
+  description: string | null;
   channel_members: {
     user_id: string;
     profiles: { username: string };
@@ -24,7 +25,9 @@ export async function listMyChannels(): Promise<ChannelSummary[]> {
 
   const { data, error } = await supabase
     .from('channels')
-    .select('id, type, name, created_at, channel_members(user_id, profiles!inner(username))')
+    .select(
+      'id, type, name, description, created_at, channel_members(user_id, profiles!inner(username))',
+    )
     .is('server_id', null)
     .order('created_at', { ascending: true })
     .returns<ChannelRow[]>();
@@ -45,11 +48,14 @@ export async function listMyChannels(): Promise<ChannelSummary[]> {
       type: row.type,
       name: row.name,
       members,
+      description: row.description,
+      // DMs and groups are not reorderable, so position is not read from the
+      // row here; it exists for server channels only.
+      position: 0,
       // A DM has no name of its own; it is named after the person you are
-      // talking to. A group falls back to the same rule when it was created
-      // without a name. Same abstraction, different label.
-      displayName:
-        row.name ?? others.map((member) => member.username).join(', ') ?? '',
+      // talking to. join() on an empty list gives an empty string, which the
+      // channel list falls back on with "gesprek".
+      displayName: row.name ?? others.map((member) => member.username).join(', '),
     };
   });
 }

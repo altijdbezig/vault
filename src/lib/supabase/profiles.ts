@@ -7,9 +7,22 @@ interface ProfileRow {
   username: string;
   public_key: string;
   key_fingerprint: string;
+  display_name: string | null;
+  /**
+   * The full public URL, not a storage path.
+   *
+   * The avatars bucket is public, so the URL is stable, and storing it whole
+   * means a member list does not have to run every row through
+   * getPublicUrl(). Each upload writes a new random filename and removes the
+   * old one, which also solves cache busting: a changed avatar is a changed
+   * URL, so no browser can show the previous one.
+   */
+  avatar_url: string | null;
+  created_at: string | null;
 }
 
-const PROFILE_COLUMNS = 'id, username, public_key, key_fingerprint';
+const PROFILE_COLUMNS =
+  'id, username, public_key, key_fingerprint, display_name, avatar_url, created_at';
 
 function toProfile(row: ProfileRow): Profile {
   return {
@@ -17,6 +30,9 @@ function toProfile(row: ProfileRow): Profile {
     username: row.username,
     publicKey: row.public_key,
     fingerprint: row.key_fingerprint,
+    displayName: row.display_name,
+    avatarUrl: row.avatar_url,
+    createdAt: row.created_at,
   };
 }
 
@@ -90,6 +106,8 @@ interface ChannelMemberRow {
     username: string;
     public_key: string | null;
     key_fingerprint: string | null;
+    display_name: string | null;
+    avatar_url: string | null;
   };
 }
 
@@ -102,7 +120,9 @@ interface ChannelMemberRow {
 export async function getPublicKeysForChannel(channelId: string): Promise<ChannelMemberKey[]> {
   const { data, error } = await supabase
     .from('channel_members')
-    .select('user_id, profiles!inner(username, public_key, key_fingerprint)')
+    .select(
+      'user_id, profiles!inner(username, public_key, key_fingerprint, display_name, avatar_url)',
+    )
     .eq('channel_id', channelId)
     .returns<ChannelMemberRow[]>();
 
@@ -117,5 +137,7 @@ export async function getPublicKeysForChannel(channelId: string): Promise<Channe
     // callers only have to check for null.
     publicKey: row.profiles.public_key?.trim() ? row.profiles.public_key : null,
     fingerprint: row.profiles.key_fingerprint ?? null,
+    displayName: row.profiles.display_name ?? null,
+    avatarUrl: row.profiles.avatar_url ?? null,
   }));
 }

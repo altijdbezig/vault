@@ -74,12 +74,20 @@ vi.mock('../../hooks/useAuth', async (importOriginal) => ({
 }));
 
 const SERVERS: ServerSummary[] = [
-  { id: 'srv-1', name: 'Vault HQ', ownerId: 'user-a', role: 'owner' },
-  { id: 'srv-2', name: 'Tweede', ownerId: 'user-b', role: 'member' },
+  { id: 'srv-1', name: 'Vault HQ', ownerId: 'user-a', role: 'owner', iconUrl: null },
+  { id: 'srv-2', name: 'Tweede', ownerId: 'user-b', role: 'member', iconUrl: null },
 ];
 
 function channel(id: string, name: string): ChannelSummary {
-  return { id, type: 'text', name, members: [], displayName: name };
+  return {
+    id,
+    type: 'text',
+    name,
+    members: [],
+    displayName: name,
+    description: null,
+    position: 0,
+  };
 }
 
 const SERVER_CHANNELS: Record<string, ChannelSummary[]> = {
@@ -94,11 +102,20 @@ const DM_CHANNELS: ChannelSummary[] = [
     name: null,
     members: [{ userId: 'user-b', username: 'jayden' }],
     displayName: 'jayden',
+    description: null,
+    position: 0,
   },
 ];
 
 const MEMBERS: ServerMember[] = [
-  { userId: 'user-a', username: 'benjamin', role: 'owner', fingerprint: 'aa' },
+  {
+    userId: 'user-a',
+    username: 'benjamin',
+    role: 'owner',
+    fingerprint: 'aa',
+    displayName: null,
+    avatarUrl: null,
+  },
 ];
 
 /** Lets a test press the browser back button. */

@@ -18,6 +18,7 @@ interface ServerRow {
   id: string;
   name: string;
   owner_id: string;
+  icon_url: string | null;
   server_members: { user_id: string; role: ServerRole }[];
 }
 
@@ -25,6 +26,8 @@ interface ServerChannelRow {
   id: string;
   type: 'dm' | 'group' | 'text';
   name: string | null;
+  description: string | null;
+  position: number | null;
   channel_members: {
     user_id: string;
     profiles: { username: string };
@@ -37,6 +40,8 @@ interface ServerMemberRow {
   profiles: {
     username: string;
     key_fingerprint: string | null;
+    display_name: string | null;
+    avatar_url: string | null;
   };
 }
 
@@ -46,7 +51,7 @@ export async function listMyServers(): Promise<ServerSummary[]> {
 
   const { data, error } = await supabase
     .from('servers')
-    .select('id, name, owner_id, created_at, server_members(user_id, role)')
+    .select('id, name, owner_id, icon_url, created_at, server_members(user_id, role)')
     .order('created_at', { ascending: true })
     .returns<ServerRow[]>();
 
@@ -58,6 +63,7 @@ export async function listMyServers(): Promise<ServerSummary[]> {
     id: row.id,
     name: row.name,
     ownerId: row.owner_id,
+    iconUrl: row.icon_url,
     role: row.server_members.find((member) => member.user_id === me)?.role ?? 'member',
   }));
 }
@@ -128,8 +134,14 @@ export async function createServer(name: string): Promise<string> {
 export async function listServerChannels(serverId: string): Promise<ChannelSummary[]> {
   const { data, error } = await supabase
     .from('channels')
-    .select('id, type, name, created_at, channel_members(user_id, profiles!inner(username))')
+    .select(
+      'id, type, name, description, position, created_at, channel_members(user_id, profiles!inner(username))',
+    )
     .eq('server_id', serverId)
+    // position first, created_at as the tiebreaker. Every existing channel has
+    // position 0 (the column default), so until somebody drags something the
+    // order is exactly what it was before this column existed.
+    .order('position', { ascending: true })
     .order('created_at', { ascending: true })
     .returns<ServerChannelRow[]>();
 
@@ -145,6 +157,8 @@ export async function listServerChannels(serverId: string): Promise<ChannelSumma
       userId: member.user_id,
       username: member.profiles.username,
     })),
+    description: row.description,
+    position: row.position ?? 0,
     displayName: row.name ?? 'kanaal',
   }));
 }
@@ -209,7 +223,7 @@ export async function createChannel(serverId: string, name: string): Promise<str
 export async function listServerMembers(serverId: string): Promise<ServerMember[]> {
   const { data, error } = await supabase
     .from('server_members')
-    .select('user_id, role, profiles!inner(username, key_fingerprint)')
+    .select('user_id, role, profiles!inner(username, key_fingerprint, display_name, avatar_url)')
     .eq('server_id', serverId)
     .returns<ServerMemberRow[]>();
 
@@ -222,6 +236,8 @@ export async function listServerMembers(serverId: string): Promise<ServerMember[
     username: row.profiles.username,
     role: row.role,
     fingerprint: row.profiles.key_fingerprint ?? null,
+    displayName: row.profiles.display_name ?? null,
+    avatarUrl: row.profiles.avatar_url ?? null,
   }));
 }
 

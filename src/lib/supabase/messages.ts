@@ -1,7 +1,8 @@
 import type { MessageRow } from '../../types';
 import { supabase } from './client';
 
-const MESSAGE_COLUMNS = 'id, channel_id, sender_id, ciphertext, created_at, deleted_at';
+const MESSAGE_COLUMNS =
+  'id, channel_id, sender_id, ciphertext, created_at, edited_at, deleted_at, reply_to_id';
 
 /** One page of history. Exported so callers can tell a full page from a last one. */
 export const MESSAGE_PAGE_SIZE = 50;
@@ -37,11 +38,17 @@ export async function fetchMessages(
   // already the order we want.
   const ascending = opts.after !== undefined;
 
+  // Deleted rows are NOT filtered out here any more.
+  //
+  // They come back with an empty ciphertext and render as "bericht
+  // verwijderd" in place. Filtering them would leave a gap in the middle of a
+  // conversation, replies pointing at nothing, and a paging cursor that skips
+  // rows — and a gap reads as a bug, not as a deletion. Unread counting still
+  // ignores them; see fetchUnreadState.
   let query = supabase
     .from('messages')
     .select(MESSAGE_COLUMNS)
     .eq('channel_id', channelId)
-    .is('deleted_at', null)
     .order('created_at', { ascending })
     .limit(opts.limit ?? MESSAGE_PAGE_SIZE);
 
@@ -96,12 +103,98 @@ export async function fetchMessagesSince(
  * Takes ciphertext only. Encryption happens a layer up, in useMessages; this
  * function must never see plaintext.
  */
-export async function sendMessage(channelId: string, ciphertext: string): Promise<MessageRow> {
+export async function sendMessage(
+  channelId: string,
+  ciphertext: string,
+  replyToId?: string | null,
+): Promise<MessageRow> {
   const { data, error } = await supabase
     .from('messages')
-    .insert({ channel_id: channelId, ciphertext })
+    .insert({ channel_id: channelId, ciphertext, reply_to_id: replyToId ?? null })
     .select(MESSAGE_COLUMNS)
     .single<MessageRow>();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+/**
+ * Replaces the ciphertext of your own message and stamps edited_at.
+ *
+ * The new ciphertext is encrypted for the members as they are now, which is
+ * not necessarily who it was encrypted for originally. Somebody who has left
+ * the channel keeps the copy they already had of the old text; that is
+ * unavoidable and true of any edit in any end-to-end encrypted system.
+ *
+ * edited_at is set by the client because there is no trigger for it, and RLS
+ * cannot force a column to be written. A sender could therefore edit without
+ * setting it. The signature inside the new ciphertext still proves who wrote
+ * the current text, so what a missing edited_at costs is the "(bewerkt)"
+ * label, not authenticity.
+ */
+export async function updateMessage(messageId: string, ciphertext: string): Promise<MessageRow> {
+  const { data, error } = await supabase
+    .from('messages')
+    .update({ ciphertext, edited_at: new Date().toISOString() })
+    .eq('id', messageId)
+    .select(MESSAGE_COLUMNS)
+    .single<MessageRow>();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+/**
+ * Soft-deletes your own message and blanks the ciphertext.
+ *
+ * Both halves matter. Keeping the row keeps the place in the conversation and
+ * keeps replies and reactions pointing somewhere. Blanking the ciphertext is
+ * what makes it a deletion rather than a hidden message: as long as the
+ * ciphertext is on the server, every member who still has their key can go on
+ * decrypting it, whatever the UI chooses to show.
+ *
+ * What this does not promise: that the text disappears from a screen where
+ * somebody already decrypted it, or from a copy they saved. No system can
+ * promise that, and the UI should not imply otherwise.
+ */
+export async function deleteMessage(messageId: string): Promise<MessageRow> {
+  const { data, error } = await supabase
+    .from('messages')
+    .update({ ciphertext: '', deleted_at: new Date().toISOString() })
+    .eq('id', messageId)
+    .select(MESSAGE_COLUMNS)
+    .single<MessageRow>();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+/**
+ * Fetches specific messages by id, for reply previews.
+ *
+ * A reply can point at a message far above what is loaded, and scrolling all
+ * the way back to render one preview line would be absurd. RLS still applies,
+ * so an id from another channel simply comes back empty.
+ */
+export async function fetchMessagesByIds(ids: string[]): Promise<MessageRow[]> {
+  if (ids.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('messages')
+    .select(MESSAGE_COLUMNS)
+    .in('id', ids)
+    .returns<MessageRow[]>();
 
   if (error) {
     throw error;
@@ -127,6 +220,7 @@ export function subscribeToChannel(
   channelId: string,
   onInsert: (row: MessageRow) => void,
   onStatus?: (status: RealtimeStatus) => void,
+  onUpdate?: (row: MessageRow) => void,
 ): () => void {
   const channel = supabase
     .channel(`messages:${channelId}`)
@@ -140,6 +234,26 @@ export function subscribeToChannel(
       },
       (payload) => {
         onInsert(payload.new);
+      },
+    )
+    // Edits and deletions arrive as UPDATE. Without this an edit only shows up
+    // after a reload, and a deleted message stays readable on the other side
+    // for as long as the tab is open — which is the one case where "eventually
+    // consistent" is not good enough.
+    //
+    // The default replica identity means `new` is complete and `old` holds
+    // only the id. Only `new` is used, so REPLICA IDENTITY FULL is not needed;
+    // it would re-send every old ciphertext over the socket for nothing.
+    .on<MessageRow>(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'messages',
+        filter: `channel_id=eq.${channelId}`,
+      },
+      (payload) => {
+        onUpdate?.(payload.new);
       },
     )
     .subscribe((status) => {

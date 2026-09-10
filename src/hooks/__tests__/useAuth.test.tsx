@@ -62,6 +62,9 @@ function makeProfile(user: User, fingerprint: string): Profile {
     username: 'benjamin',
     publicKey: 'armored-public-key',
     fingerprint,
+    displayName: null,
+    avatarUrl: null,
+    createdAt: null,
   };
 }
 
