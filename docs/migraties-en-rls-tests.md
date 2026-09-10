@@ -295,6 +295,12 @@ lijst die ik zou aflopen, met twee accounts (A en B) en één server.
 
 ## Bekende gaten, bewust niet dichtgezet
 
+> **Nagemeten op de live database, 10-09-2026**, na het toepassen van de negen
+> `20260910*`-migraties. De twee gaten hieronder die over `messages` gaan
+> (`reply_to_id` en `channel_id`) zijn geen vermoeden meer maar gemeten gedrag:
+> de queries staan onder "Uitgevoerde controles" aan het eind van dit bestand.
+> Beide blijven bewust open — er komt nu geen trigger voor.
+
 - **`reply_to_id` wordt niet gecontroleerd tegen `channel_id`.** Via de UI kan
   het niet, maar een REST-call kan een antwoord in kanaal X laten verwijzen
   naar een bericht in kanaal Y. Het lekt niets — de verwijzing is alleen een
@@ -317,5 +323,51 @@ lijst die ik zou aflopen, met twee accounts (A en B) en één server.
   niet naar de vorige waarde van een rij kijken, dus dit dichtzetten vraagt een
   trigger. Genoteerd, niet gebouwd: geen scherm doet het, en een extra trigger
   was niet gevraagd.
-- **Van `storage.objects` is de bestaande policy-lijst onbekend.** Zie de
-  controlequery in de inleiding hierboven.
+- ~~**Van `storage.objects` is de bestaande policy-lijst onbekend.**~~
+  Opgelost op 10-09-2026: er stonden vóór migratie `20260910110800` géén
+  policies op `storage.objects` en waren er geen buckets. De zeven policies en
+  twee buckets die er nu staan zijn dus precies wat die migratie heeft gezet,
+  zonder iets van een vorige ronde eronder. Zie hieronder.
+
+---
+
+## Uitgevoerde controles (10-09-2026)
+
+Gedraaid tegen het live project `umrpixulwailfchjnmqn` ná het toepassen van de
+negen `20260910*`-migraties. Elke schrijftest liep in een blok dat aan het eind
+altijd een exception gooit, dus alles is teruggedraaid; de rijtellingen (4
+profielen, 3 servers, 6 kanalen, 14 berichten) waren erna onveranderd.
+
+### Eén policy per tabel en commando
+
+```sql
+select tablename, cmd, count(*), string_agg(policyname, ' | ')
+from pg_policies where schemaname = 'public'
+group by tablename, cmd having count(*) > 1;
+```
+
+**Leeg.** Geen enkele tabel heeft twee permissive policies voor hetzelfde
+commando, dus er is nergens een `drop` niet aangekomen.
+
+### Storage
+
+Zeven policies op `storage.objects` (avatars: publiek SELECT, plus
+INSERT/UPDATE/DELETE op de eigen map; attachments: SELECT en INSERT voor
+kanaalleden, DELETE op `owner`). Buckets: `avatars` publiek, 2 MB, vier
+image-mimetypes; `attachments` privé, 12 MB, alleen `application/octet-stream`.
+
+### De vijf beveiligingstests
+
+| # | Test | Uitkomst |
+| --- | --- | --- |
+| a | Eigen `public_key` of `key_fingerprint` overschrijven | **geweigerd**, `42501` — `profile_key_unchanged` doet zijn werk. Een gewone `display_name`-update werkt nog wél. |
+| b | Niet-lid leest `server_invites` | **0 rijen**, ook met een echte invite in de tabel. Geen codes gelekt. |
+| c | Laatste eigenaar vertrekt of degradeert zichzelf | **geweigerd**, `P0001`, beide gevallen — `guard_last_server_owner`. |
+| d | Admin schrijft `owner_id` naar zichzelf | **geweigerd**, `42501` — `guard_server_owner_id`. Hernoemen mag een admin wél, zoals bedoeld. |
+| e | Reactie op een bericht in een vreemd kanaal | **geweigerd**, `42501`. In een eigen kanaal lukt het wel. |
+
+### Het bekende `channel_id`-gat
+
+Bevestigd, ongewijzigd: een eigen bericht verplaatsen naar een ander kanaal
+waar je óók lid van bent → **toegestaan**. Naar een kanaal waar je géén lid van
+bent → **geweigerd**, `42501`.
