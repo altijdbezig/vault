@@ -11,7 +11,20 @@ const mocks = vi.hoisted(() => ({
   listServerMembers: vi.fn(),
   createServer: vi.fn(),
   joinServer: vi.fn(),
+  redeemInvite: vi.fn(),
   createChannel: vi.fn(),
+  updateServer: vi.fn(),
+  deleteServer: vi.fn(),
+  updateChannel: vi.fn(),
+  deleteChannel: vi.fn(),
+  reorderChannels: vi.fn(),
+  setMemberRole: vi.fn(),
+  removeServerMember: vi.fn(),
+  transferOwnership: vi.fn(),
+  leaveServer: vi.fn(),
+  createInvite: vi.fn(),
+  listInvites: vi.fn(),
+  revokeInvite: vi.fn(),
   listMyChannels: vi.fn(),
   createDm: vi.fn(),
   getPublicKeysForChannel: vi.fn(),
@@ -31,7 +44,20 @@ vi.mock('../../lib/supabase/servers', () => ({
   listServerMembers: mocks.listServerMembers,
   createServer: mocks.createServer,
   joinServer: mocks.joinServer,
+  redeemInvite: mocks.redeemInvite,
   createChannel: mocks.createChannel,
+  updateServer: mocks.updateServer,
+  deleteServer: mocks.deleteServer,
+  updateChannel: mocks.updateChannel,
+  deleteChannel: mocks.deleteChannel,
+  reorderChannels: mocks.reorderChannels,
+  setMemberRole: mocks.setMemberRole,
+  removeServerMember: mocks.removeServerMember,
+  transferOwnership: mocks.transferOwnership,
+  leaveServer: mocks.leaveServer,
+  createInvite: mocks.createInvite,
+  listInvites: mocks.listInvites,
+  revokeInvite: mocks.revokeInvite,
 }));
 
 vi.mock('../../lib/supabase/channels', () => ({
@@ -73,9 +99,20 @@ vi.mock('../../hooks/useAuth', async (importOriginal) => ({
   }),
 }));
 
+/**
+ * Realistic ids for the second server.
+ *
+ * /join accepts two shapes now, and it tells them apart: a uuid is an older
+ * direct-join link, anything matching the invite-code pattern goes through the
+ * database function. A made-up id like "srv-2" is neither, so these tests
+ * would be testing the rejection path rather than the join.
+ */
+const SERVER_2 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const INVITE_CODE = 'a1b2c3d4e5';
+
 const SERVERS: ServerSummary[] = [
   { id: 'srv-1', name: 'Vault HQ', ownerId: 'user-a', role: 'owner', iconUrl: null },
-  { id: 'srv-2', name: 'Tweede', ownerId: 'user-b', role: 'member', iconUrl: null },
+  { id: SERVER_2, name: 'Tweede', ownerId: 'user-b', role: 'member', iconUrl: null },
 ];
 
 function channel(id: string, name: string): ChannelSummary {
@@ -92,7 +129,7 @@ function channel(id: string, name: string): ChannelSummary {
 
 const SERVER_CHANNELS: Record<string, ChannelSummary[]> = {
   'srv-1': [channel('chan-1a', 'algemeen'), channel('chan-1b', 'random')],
-  'srv-2': [channel('chan-2a', 'welkom')],
+  [SERVER_2]: [channel('chan-2a', 'welkom')],
 };
 
 const DM_CHANNELS: ChannelSummary[] = [
@@ -351,16 +388,16 @@ describe('C — one column at a time on a phone', () => {
 
 describe('D4 — invite links', () => {
   it('joins the server and opens it', async () => {
-    renderShell('/join/srv-2');
+    renderShell(`/join/${SERVER_2}`);
 
-    await waitFor(() => expect(mocks.joinServer).toHaveBeenCalledWith('srv-2'));
+    await waitFor(() => expect(mocks.joinServer).toHaveBeenCalledWith(SERVER_2));
     // Straight into the server, not back to a form asking for an id.
     await waitFor(() => expect(mocks.fetchMessages).toHaveBeenCalledWith('chan-2a'));
     expect(screen.getByRole('heading', { name: 'Kanalen' })).toBeTruthy();
   });
 
   it('joins once, even though effects run twice in development', async () => {
-    renderShell('/join/srv-2');
+    renderShell(`/join/${SERVER_2}`);
 
     await waitFor(() => expect(mocks.joinServer).toHaveBeenCalled());
     await settle();
@@ -371,11 +408,36 @@ describe('D4 — invite links', () => {
   it('explains a broken invite instead of dropping you on a blank screen', async () => {
     mocks.joinServer.mockRejectedValueOnce(new Error('server bestaat niet'));
 
-    renderShell('/join/srv-2');
+    renderShell(`/join/${SERVER_2}`);
 
     await waitFor(() =>
       expect(screen.getByRole('heading', { name: 'Deze uitnodiging werkt niet' })).toBeTruthy(),
     );
     expect(screen.getByRole('button', { name: 'Terug naar je gesprekken' })).toBeTruthy();
+  });
+
+  it('wisselt een uitnodigingscode in via de databasefunctie', async () => {
+    // Een code is geen server-id, en de client mag de invite-rij niet lezen.
+    // Inwisselen gaat daarom via redeem_server_invite, dat het server-id
+    // teruggeeft waar we naartoe moeten.
+    mocks.redeemInvite.mockResolvedValue(SERVER_2);
+
+    renderShell(`/join/${INVITE_CODE}`);
+
+    await waitFor(() => expect(mocks.redeemInvite).toHaveBeenCalledWith(INVITE_CODE));
+    expect(mocks.joinServer).not.toHaveBeenCalled();
+    await waitFor(() => expect(mocks.fetchMessages).toHaveBeenCalledWith('chan-2a'));
+  });
+
+  it('legt een onbruikbare link uit zonder de database aan te tikken', async () => {
+    // "srv-2" is geen uuid en geen geldige code. Dat lokaal afkeuren geeft een
+    // nette melding in plaats van een databasefout.
+    renderShell('/join/srv-2');
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Deze uitnodiging werkt niet' })).toBeTruthy(),
+    );
+    expect(mocks.joinServer).not.toHaveBeenCalled();
+    expect(mocks.redeemInvite).not.toHaveBeenCalled();
   });
 });

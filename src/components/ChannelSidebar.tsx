@@ -1,10 +1,22 @@
+import { Avatar } from './Avatar';
 import { Button } from './Button';
+import { IconButton } from './IconButton';
 import { SkeletonList } from './Skeleton';
 import { UnreadBadge } from './UnreadBadge';
-import type { ChannelSummary, ServerSummary } from '../types';
+import type { ChannelSummary, ServerRole, ServerSummary } from '../types';
+
+const ROLE_LABELS: Record<ServerRole, string> = {
+  owner: 'eigenaar',
+  admin: 'admin',
+  member: 'lid',
+};
 
 interface ChannelSidebarProps {
   server: ServerSummary;
+  /** Opens the server settings dialog. Owners and admins only. */
+  onOpenSettings: () => void;
+  /** Leaves the server. Absent for the owner, who has to transfer first. */
+  onLeaveServer?: () => void;
   channels: ChannelSummary[];
   activeChannelId: string | null;
   loading: boolean;
@@ -14,12 +26,12 @@ interface ChannelSidebarProps {
   onCreateChannel: () => void;
   /** Unread messages per channel id. */
   unread: Record<string, number>;
-  /** The shareable /join link for this server. */
-  inviteLink: string;
 }
 
 export function ChannelSidebar({
   server,
+  onOpenSettings,
+  onLeaveServer,
   channels,
   activeChannelId,
   loading,
@@ -28,15 +40,23 @@ export function ChannelSidebar({
   onSelect,
   onCreateChannel,
   unread,
-  inviteLink,
 }: ChannelSidebarProps) {
   return (
     <nav className="flex h-full flex-col">
-      <header className="border-b border-subtle px-3 py-2.5">
-        <h2 className="truncate text-sm font-semibold text-primary">{server.name}</h2>
-        <p className="text-xs text-muted">
-          {memberCount} {memberCount === 1 ? 'lid' : 'leden'} · jij bent {server.role}
-        </p>
+      <header className="flex items-start gap-2 border-b border-subtle px-3 py-2.5">
+        <Avatar userId={server.id} name={server.name} url={server.iconUrl} size="sm" />
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-sm font-semibold text-primary">{server.name}</h2>
+          <p className="truncate text-2xs text-muted">
+            {memberCount} {memberCount === 1 ? 'lid' : 'leden'} · jij bent{' '}
+            {ROLE_LABELS[server.role]}
+          </p>
+        </div>
+        {canCreateChannel ? (
+          <IconButton label="Serverinstellingen" size="sm" onClick={onOpenSettings}>
+            ⚙
+          </IconButton>
+        ) : null}
       </header>
 
       <div className="flex items-center justify-between px-3 pt-3 pb-1">
@@ -89,18 +109,24 @@ export function ChannelSidebar({
         ))}
       </ul>
 
-      <div className="border-t border-subtle p-2">
-        <p className="px-1 text-xs text-muted">Uitnodigingslink:</p>
-        <code className="mt-1 block select-all break-all rounded bg-base px-2 py-1 font-mono text-2xs text-secondary">
-          {inviteLink}
-        </code>
-        <p className="mt-1 px-1 text-2xs leading-relaxed text-muted">
-          Wie hem opent en inlogt, komt meteen in de server. Werkt het plakken
-          niet, dan kan het server-id ook: <span className="select-all">{server.id}</span>
-        </p>
+      <div className="flex flex-col gap-1 border-t border-subtle p-2">
         {canCreateChannel ? (
-          <Button variant="ghost" onClick={onCreateChannel} className="mt-2 w-full">
-            Kanaal aanmaken
+          <>
+            <Button variant="ghost" block onClick={onCreateChannel}>
+              Kanaal aanmaken
+            </Button>
+            {/* Invites moved into server settings. A copyable link sitting
+                permanently in the sidebar is one accidental screenshot away
+                from being public, and it could not carry an expiry or a use
+                limit. */}
+            <Button variant="ghost" block onClick={onOpenSettings}>
+              Uitnodigingen beheren
+            </Button>
+          </>
+        ) : null}
+        {onLeaveServer ? (
+          <Button variant="danger" block onClick={onLeaveServer}>
+            Server verlaten
           </Button>
         ) : null}
       </div>

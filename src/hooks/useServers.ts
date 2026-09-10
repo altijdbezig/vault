@@ -2,11 +2,22 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   createChannel as createChannelRow,
   createServer as createServerRow,
+  deleteChannel as deleteChannelRow,
+  deleteServer as deleteServerRow,
   joinServer as joinServerRow,
+  leaveServer as leaveServerRow,
   listMyServers,
   listServerChannels,
   listServerMembers,
+  redeemInvite,
+  removeServerMember,
+  reorderChannels,
+  setMemberRole,
+  transferOwnership,
+  updateChannel as updateChannelRow,
+  updateServer as updateServerRow,
 } from '../lib/supabase/servers';
+import type { UpdateChannelInput, UpdateServerInput } from '../lib/supabase/servers';
 import type { ChannelSummary, ServerMember, ServerRole, ServerSummary } from '../types';
 
 export interface UseServersResult {
@@ -17,6 +28,12 @@ export interface UseServersResult {
   /** Creates a server with a default channel and returns its id. */
   createServer(name: string): Promise<string>;
   joinServer(serverId: string): Promise<void>;
+  /** Redeems an invite code and returns the server it led to. */
+  joinByCode(code: string): Promise<string>;
+  updateServer(serverId: string, input: UpdateServerInput): Promise<void>;
+  deleteServer(serverId: string): Promise<void>;
+  leaveServer(serverId: string): Promise<void>;
+  transferOwnership(serverId: string, userId: string): Promise<void>;
 }
 
 export function useServers(): UseServersResult {
@@ -57,7 +74,60 @@ export function useServers(): UseServersResult {
     [reload],
   );
 
-  return { servers, loading, error, reload, createServer, joinServer };
+  const joinByCode = useCallback(
+    async (code: string): Promise<string> => {
+      const serverId = await redeemInvite(code);
+      await reload();
+      return serverId;
+    },
+    [reload],
+  );
+
+  const updateServer = useCallback(
+    async (serverId: string, input: UpdateServerInput): Promise<void> => {
+      await updateServerRow(serverId, input);
+      await reload();
+    },
+    [reload],
+  );
+
+  const deleteServer = useCallback(
+    async (serverId: string): Promise<void> => {
+      await deleteServerRow(serverId);
+      await reload();
+    },
+    [reload],
+  );
+
+  const leaveServer = useCallback(
+    async (serverId: string): Promise<void> => {
+      await leaveServerRow(serverId);
+      await reload();
+    },
+    [reload],
+  );
+
+  const transfer = useCallback(
+    async (serverId: string, userId: string): Promise<void> => {
+      await transferOwnership(serverId, userId);
+      await reload();
+    },
+    [reload],
+  );
+
+  return {
+    servers,
+    loading,
+    error,
+    reload,
+    createServer,
+    joinServer,
+    joinByCode,
+    updateServer,
+    deleteServer,
+    leaveServer,
+    transferOwnership: transfer,
+  };
 }
 
 export interface UseServerChannelsResult {
@@ -69,6 +139,14 @@ export interface UseServerChannelsResult {
   /** Only owners and admins may create channels. */
   canCreateChannel: boolean;
   createChannel(name: string): Promise<string>;
+  updateChannel(channelId: string, input: UpdateChannelInput): Promise<void>;
+  deleteChannel(channelId: string): Promise<void>;
+  /** Writes a new channel order, in the order given. */
+  reorder(orderedChannelIds: string[]): Promise<void>;
+  /** Only the owner may hand out roles or remove people. */
+  canManageMembers: boolean;
+  setRole(userId: string, role: ServerRole): Promise<void>;
+  removeMember(userId: string): Promise<void>;
 }
 
 /**
@@ -160,6 +238,52 @@ export function useServerChannels(
     [reload, serverId],
   );
 
+  const updateChannel = useCallback(
+    async (channelId: string, input: UpdateChannelInput): Promise<void> => {
+      await updateChannelRow(channelId, input);
+      await reload();
+    },
+    [reload],
+  );
+
+  const deleteChannel = useCallback(
+    async (channelId: string): Promise<void> => {
+      await deleteChannelRow(channelId);
+      await reload();
+    },
+    [reload],
+  );
+
+  const reorder = useCallback(
+    async (orderedChannelIds: string[]): Promise<void> => {
+      await reorderChannels(orderedChannelIds);
+      await reload();
+    },
+    [reload],
+  );
+
+  const setRole = useCallback(
+    async (userId: string, newRole: ServerRole): Promise<void> => {
+      if (!serverId) {
+        throw new Error('Geen server geselecteerd.');
+      }
+      await setMemberRole(serverId, userId, newRole);
+      await reload();
+    },
+    [reload, serverId],
+  );
+
+  const removeMember = useCallback(
+    async (userId: string): Promise<void> => {
+      if (!serverId) {
+        throw new Error('Geen server geselecteerd.');
+      }
+      await removeServerMember(serverId, userId);
+      await reload();
+    },
+    [reload, serverId],
+  );
+
   return {
     channels,
     members,
@@ -168,5 +292,11 @@ export function useServerChannels(
     reload,
     canCreateChannel: role === 'owner' || role === 'admin',
     createChannel,
+    updateChannel,
+    deleteChannel,
+    reorder,
+    canManageMembers: role === 'owner',
+    setRole,
+    removeMember,
   };
 }

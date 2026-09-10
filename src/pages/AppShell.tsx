@@ -11,6 +11,7 @@ import { ErrorNotice } from '../components/ErrorNotice';
 import { IconButton } from '../components/IconButton';
 import { NewDmDialog } from '../components/NewDmDialog';
 import { NewGroupDialog } from '../components/NewGroupDialog';
+import { Modal } from '../components/Modal';
 import { ProfileCard } from '../components/ProfileCard';
 import { ServerRail } from '../components/ServerRail';
 import { useAuth } from '../hooks/useAuth';
@@ -19,9 +20,10 @@ import { useIsWideScreen } from '../hooks/useMediaQuery';
 import { useServerChannels, useServers } from '../hooks/useServers';
 import { useUnread } from '../hooks/useUnread';
 import { describeError } from '../lib/errorMessages';
-import { inviteLinkFor } from '../lib/invite';
+import { inviteTokenFromInput } from '../lib/invite';
 import type { ChannelType } from '../types';
 import { ConversationView } from './ConversationView';
+import { ServerSettingsDialog } from './ServerSettingsDialog';
 import { SettingsDialog } from './SettingsDialog';
 
 /** Remembers where you were, so "/" can send you back there. */
@@ -55,7 +57,7 @@ export function AppShell() {
   // /dm exists as a route of its own so the DM button has somewhere to go.
   // Sending it to "/" instead put it straight back into the redirect below,
   // which bounced it into the server it had just left.
-  const joinMatch = useMatch('/join/:serverId');
+  const joinMatch = useMatch('/join/:token');
   const dmMatch = useMatch('/dm/:channelId');
   const serverMatch = useMatch('/server/:serverId');
   const serverChannelMatch = useMatch('/server/:serverId/:channelId');
@@ -75,7 +77,16 @@ export function AppShell() {
     addToGroup,
     leaveGroup,
   } = useChannels();
-  const { servers, createServer, joinServer } = useServers();
+  const {
+    servers,
+    createServer,
+    joinServer,
+    joinByCode,
+    updateServer,
+    deleteServer,
+    leaveServer,
+    transferOwnership,
+  } = useServers();
   const { counts: unread, serverHasUnread, setActiveChannel } = useUnread();
   const wide = useIsWideScreen();
 
@@ -87,6 +98,12 @@ export function AppShell() {
     error: serverError,
     canCreateChannel,
     createChannel,
+    updateChannel,
+    deleteChannel,
+    reorder,
+    canManageMembers,
+    setRole,
+    removeMember,
   } = useServerChannels(activeServerId, activeServer?.role ?? null);
 
   const [showNewDm, setShowNewDm] = useState(false);
@@ -95,6 +112,8 @@ export function AppShell() {
   const [showCreateServer, setShowCreateServer] = useState(false);
   const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showServerSettings, setShowServerSettings] = useState(false);
+  const [confirmLeaveServer, setConfirmLeaveServer] = useState(false);
   /** The profile card that is open, by user id. */
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   /** Mobile only: the server rail is a drawer there, not a column. */
@@ -110,23 +129,38 @@ export function AppShell() {
    * sign-in screen, so this runs the moment the app is unlocked and drops the
    * user in the server rather than making them find it.
    */
-  const inviteServerId = joinMatch?.params.serverId ?? null;
+  const inviteToken = joinMatch?.params.token ?? null;
   useEffect(() => {
-    if (!inviteServerId || handledInvites.current.has(inviteServerId)) {
+    if (!inviteToken || handledInvites.current.has(inviteToken)) {
       return;
     }
-    handledInvites.current.add(inviteServerId);
+    handledInvites.current.add(inviteToken);
 
     void (async () => {
       try {
-        await joinServer(inviteServerId);
-        navigate(`/server/${inviteServerId}`, { replace: true });
+        // Two shapes of link. A bare server id is an older link and joins
+        // directly; an invite code goes through the database function, which
+        // is the only thing allowed to read the invite row.
+        const parsed = inviteTokenFromInput(inviteToken);
+        if (!parsed) {
+          setJoinError('Deze uitnodigingslink is niet geldig.');
+          return;
+        }
+
+        if (parsed.kind === 'serverId') {
+          await joinServer(parsed.value);
+          navigate(`/server/${parsed.value}`, { replace: true });
+          return;
+        }
+
+        const serverId = await joinByCode(parsed.value);
+        navigate(`/server/${serverId}`, { replace: true });
       } catch (caught) {
         console.error('Kon niet joinen via uitnodiging:', caught);
         setJoinError(describeError(caught));
       }
     })();
-  }, [inviteServerId, joinServer, navigate]);
+  }, [inviteToken, joinServer, joinByCode, navigate]);
 
   // Remember the last real destination for the "/" redirect.
   useEffect(() => {
@@ -211,7 +245,7 @@ export function AppShell() {
   }
 
 
-  if (inviteServerId) {
+  if (inviteToken) {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <div className="w-full max-w-sm text-center">
@@ -307,7 +341,12 @@ export function AppShell() {
             onSelect={(channelId) => navigate(`/server/${activeServer.id}/${channelId}`)}
             onCreateChannel={() => setShowCreateChannel(true)}
             unread={unread}
-            inviteLink={inviteLinkFor(activeServer.id, window.location.origin)}
+            onOpenSettings={() => setShowServerSettings(true)}
+            onLeaveServer={
+              // Absent for the owner on purpose: leaving would strand the
+              // server, so the offer is transfer or delete, in settings.
+              activeServer.role === 'owner' ? undefined : () => setConfirmLeaveServer(true)
+            }
           />
         ) : (
           <ChannelList
@@ -440,6 +479,76 @@ export function AppShell() {
           onJoin={joinServer}
           onCreated={(serverId) => navigate(`/server/${serverId}`)}
         />
+      ) : null}
+
+      {showServerSettings && activeServer ? (
+        <ServerSettingsDialog
+          server={activeServer}
+          channels={serverChannels}
+          members={serverMembers}
+          currentUserId={user?.id ?? null}
+          canManageMembers={canManageMembers}
+          onClose={() => setShowServerSettings(false)}
+          onUpdateServer={(input) => updateServer(activeServer.id, input)}
+          onDeleteServer={async () => {
+            await deleteServer(activeServer.id);
+            // The server is gone, so staying on its URL would render an empty
+            // shell with a dead sidebar.
+            navigate('/dm', { replace: true });
+          }}
+          onUpdateChannel={updateChannel}
+          onDeleteChannel={async (channelId) => {
+            await deleteChannel(channelId);
+            if (channelId === activeChannelId) {
+              navigate(`/server/${activeServer.id}`, { replace: true });
+            }
+          }}
+          onReorder={reorder}
+          onSetRole={setRole}
+          onRemoveMember={removeMember}
+          onTransferOwnership={(userId) => transferOwnership(activeServer.id, userId)}
+        />
+      ) : null}
+
+      {confirmLeaveServer && activeServer ? (
+        <Modal
+          title={`${activeServer.name} verlaten`}
+          onClose={() => setConfirmLeaveServer(false)}
+        >
+          <p className="text-sm leading-relaxed text-secondary">
+            Je wordt uit deze server en uit alle kanalen erin verwijderd. Berichten die
+            je al ontsleuteld hebt blijven op dit apparaat leesbaar, maar je krijgt
+            niets nieuws meer binnen.
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-muted">
+            Kom je later terug via een uitnodiging, dan kun je de berichten van
+            tussenliggende tijd niet meer lezen: die zijn versleuteld voor de leden van
+            toen.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              className="bg-danger text-danger-on hover:bg-danger-hover"
+              onClick={() => {
+                void (async () => {
+                  try {
+                    await leaveServer(activeServer.id);
+                    setConfirmLeaveServer(false);
+                    navigate('/dm', { replace: true });
+                  } catch (caught) {
+                    console.error('Kon de server niet verlaten:', caught);
+                    setJoinError(describeError(caught));
+                    setConfirmLeaveServer(false);
+                  }
+                })();
+              }}
+            >
+              Server verlaten
+            </Button>
+            <Button variant="ghost" onClick={() => setConfirmLeaveServer(false)}>
+              Annuleren
+            </Button>
+          </div>
+        </Modal>
       ) : null}
 
       {showSettings ? (
