@@ -22,6 +22,7 @@ import {
 } from '../lib/supabase/profiles';
 import type { UpdateProfileInput } from '../lib/supabase/profiles';
 import type { Profile } from '../types';
+import { UserFacingError } from '../lib/userFacingError';
 
 /**
  * Three states, not two.
@@ -70,21 +71,19 @@ export interface AuthContextValue {
 }
 
 /** The imported key does not belong to this account's public key. */
-export class KeyMismatchError extends Error {
+export class KeyMismatchError extends UserFacingError {
   constructor() {
     super(
       'Deze sleutel hoort niet bij dit account. Controleer of je het juiste ' +
         'back-upbestand hebt gekozen.',
     );
-    this.name = 'KeyMismatchError';
   }
 }
 
 /** No stored key on this device, so there is nothing to unlock. */
-export class NoStoredKeyError extends Error {
+export class NoStoredKeyError extends UserFacingError {
   constructor() {
     super('Op dit apparaat staat geen sleutel. Importeer je back-upbestand.');
-    this.name = 'NoStoredKeyError';
   }
 }
 

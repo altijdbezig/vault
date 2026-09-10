@@ -1,3 +1,5 @@
+import { UserFacingError } from '../userFacingError';
+
 /**
  * Errors thrown by the crypto layer.
  *
@@ -5,13 +7,14 @@
  * directly. They must never contain key material or ciphertext.
  */
 
-/** Base class for every error thrown by lib/crypto. */
-export class VaultCryptoError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = new.target.name;
-  }
-}
+/**
+ * Base class for every error thrown by lib/crypto.
+ *
+ * Extends UserFacingError because all of these messages are written to be
+ * read by the person who hit them; see lib/userFacingError.ts for why that is
+ * a class rather than a list somewhere else.
+ */
+export class VaultCryptoError extends UserFacingError {}
 
 /** The supplied passphrase could not unlock the private key. */
 export class WrongPassphraseError extends VaultCryptoError {

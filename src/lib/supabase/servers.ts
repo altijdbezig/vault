@@ -9,14 +9,10 @@ import type {
 import { supabase } from './client';
 import { isUniqueViolation } from './errors';
 import { currentUserId } from './session';
+import { UserFacingError } from '../userFacingError';
 
 /** You are not allowed to do this in this server. */
-export class NotAllowedError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'NotAllowedError';
-  }
-}
+export class NotAllowedError extends UserFacingError {}
 
 const DEFAULT_CHANNEL_NAME = 'algemeen';
 
@@ -503,13 +499,12 @@ export async function removeServerMember(serverId: string, userId: string): Prom
 }
 
 /** The owner cannot walk away and leave a server nobody can manage. */
-export class OwnerCannotLeaveError extends Error {
+export class OwnerCannotLeaveError extends UserFacingError {
   constructor() {
     super(
       'Je bent de eigenaar van deze server. Draag het eigendom eerst over aan ' +
         'iemand anders, of verwijder de server.',
     );
-    this.name = 'OwnerCannotLeaveError';
   }
 }
 
@@ -666,12 +661,7 @@ export async function revokeInvite(code: string): Promise<void> {
 }
 
 /** An invite that cannot be used, with a reason the user can act on. */
-export class InviteError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'InviteError';
-  }
-}
+export class InviteError extends UserFacingError {}
 
 /**
  * Redeems an invite code.

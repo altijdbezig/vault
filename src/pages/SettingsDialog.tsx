@@ -524,21 +524,38 @@ function PrivacyTab() {
   return (
     <>
       <Section title="Linkvoorbeelden">
+        {/*
+          * Uitgeschakeld, en dat is geen vergissing.
+          *
+          * De instelling staat er omdat de keuze vastligt: als
+          * linkvoorbeelden er ooit komen, staan ze standaard uit. Het
+          * ophalen zelf is nog niet gebouwd, en de reden staat eronder. Een
+          * schuifje dat je kunt omzetten terwijl er niets gebeurt is een
+          * leugen in de interface; een schuifje dat uitlegt waarom het vast
+          * staat is dat niet.
+          */}
         <Toggle
           label="Voorbeelden van links ophalen"
-          description="Standaard uit."
+          description="Nog niet gebouwd. Blijft uit."
           checked={settings.linkPreviews}
+          disabled
           onChange={(value) => update('linkPreviews', value)}
         />
-        <div className="mt-2">
+        <div className="mt-2 flex flex-col gap-2">
           <WarningNotice>
-            Zet je dit aan, dan haalt je browser de gedeelde link zelf op om er een
+            Zou dit aan staan, dan haalt je browser de gedeelde link zelf op om er een
             voorbeeld van te maken. De server aan de andere kant ziet daardoor jouw
             IP-adres en weet dat precies die link geopend is. Bij een link die iemand
             je in vertrouwen stuurde is dat een lek dat de afzender niet heeft
-            afgesproken. Daarom staat het uit, en daarom is dit een keuze en geen
-            standaardinstelling.
+            afgesproken.
           </WarningNotice>
+          <p className="text-xs leading-relaxed text-muted">
+            Waarom het er nog niet is: een browser mag de meeste sites niet zelf
+            uitlezen (CORS), dus in de praktijk lukt dit alleen via een tussenserver.
+            En een tussenserver zou precies zien welke links er in gesprekken
+            langskomen — het enige wat deze instelling moest voorkomen. Daarom liever
+            geen voorbeelden dan voorbeelden via een omweg.
+          </p>
         </div>
       </Section>
 

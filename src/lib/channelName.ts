@@ -12,6 +12,7 @@
  */
 
 import type { ChannelType } from '../types';
+import { UserFacingError } from './userFacingError';
 
 /**
  * The glyph in front of a channel everywhere it is listed or titled.
@@ -33,10 +34,9 @@ export function channelPrefix(type: ChannelType): string {
 }
 
 /** The name normalised to nothing at all, so there is nothing to create. */
-export class EmptyChannelNameError extends Error {
+export class EmptyChannelNameError extends UserFacingError {
   constructor() {
     super('Geef het kanaal een naam.');
-    this.name = 'EmptyChannelNameError';
   }
 }
 

@@ -9,11 +9,11 @@ import {
 import { getProfileByUsername } from '../lib/supabase/profiles';
 import type { ChannelSummary } from '../types';
 import { useAuth } from './useAuth';
+import { UserFacingError } from '../lib/userFacingError';
 
-export class UserNotFoundError extends Error {
+export class UserNotFoundError extends UserFacingError {
   constructor(username: string) {
     super(`Geen gebruiker gevonden met de naam "${username}".`);
-    this.name = 'UserNotFoundError';
   }
 }
 

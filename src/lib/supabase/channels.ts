@@ -1,6 +1,7 @@
 import type { ChannelSummary, ChannelType } from '../../types';
 import { supabase } from './client';
 import { currentUserId } from './session';
+import { UserFacingError } from '../userFacingError';
 
 interface ChannelRow {
   id: string;
@@ -130,10 +131,9 @@ export async function createDm(otherUserId: string): Promise<string> {
 }
 
 /** A group needs at least one other person in it. */
-export class EmptyGroupError extends Error {
+export class EmptyGroupError extends UserFacingError {
   constructor() {
     super('Kies minstens één andere deelnemer voor de groep.');
-    this.name = 'EmptyGroupError';
   }
 }
 

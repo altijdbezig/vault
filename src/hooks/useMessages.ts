@@ -30,6 +30,7 @@ import {
   updateMessage,
 } from '../lib/supabase/messages';
 import type { ChannelMemberKey, MessageRow } from '../types';
+import { UserFacingError } from '../lib/userFacingError';
 import { useAuth } from './useAuth';
 
 export type MessageStatus = 'sent' | 'pending' | 'failed';
@@ -110,10 +111,9 @@ export interface AttachmentProgress {
 }
 
 /** A file the user picked, rejected before anything is encrypted. */
-export class AttachmentTooLargeError extends Error {
+export class AttachmentTooLargeError extends UserFacingError {
   constructor(name: string) {
     super(`"${name}" is groter dan 10 MB en kan niet verstuurd worden.`);
-    this.name = 'AttachmentTooLargeError';
   }
 }
 

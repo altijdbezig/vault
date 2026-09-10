@@ -1,7 +1,5 @@
-import { EmptyChannelNameError } from './channelName';
-import { KeyMismatchError, NoStoredKeyError } from '../hooks/useAuth';
-import { VaultCryptoError, WrongPassphraseError } from './crypto';
-import { UsernameTakenError } from './supabase/errors';
+import { UserFacingError } from './userFacingError';
+import { WrongPassphraseError } from './crypto';
 
 /** Supabase auth messages are English and terse; translate the ones users hit. */
 const SUPABASE_MESSAGES: [needle: string, dutch: string][] = [
@@ -15,21 +13,28 @@ const SUPABASE_MESSAGES: [needle: string, dutch: string][] = [
 /**
  * Turns any thrown value into something we can show the user.
  *
- * Anything we do not recognise gets a generic message plus a console.error, so
- * the real cause stays debuggable without leaking it into the interface.
+ * The rule is a single instanceof check: an error that extends
+ * UserFacingError has a message somebody wrote for a person, so it is shown as
+ * is. Everything else gets a generic sentence plus a console.error, which
+ * keeps a Postgres constraint name or a library's English internals out of the
+ * interface while leaving the real cause debuggable.
+ *
+ * This used to be a list of known classes here, and it fell behind: half a
+ * dozen classes with careful Dutch messages were being reported as "Er ging
+ * iets mis" because nobody remembered to add them. It also meant this module
+ * imported most of the data layer, so any test that mocked one of those
+ * modules had to re-export its error classes. Both problems went away with the
+ * base class -- see lib/userFacingError.ts.
  */
 export function describeError(error: unknown): string {
+  // Ahead of the general case: the class message explains what a passphrase
+  // is for, which is right on the unlock screen and too much when you have
+  // simply mistyped it.
   if (error instanceof WrongPassphraseError) {
     return 'Het wachtwoord klopt niet.';
   }
 
-  if (
-    error instanceof UsernameTakenError ||
-    error instanceof EmptyChannelNameError ||
-    error instanceof KeyMismatchError ||
-    error instanceof NoStoredKeyError ||
-    error instanceof VaultCryptoError
-  ) {
+  if (error instanceof UserFacingError) {
     return error.message;
   }
 

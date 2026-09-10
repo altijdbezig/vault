@@ -1,5 +1,6 @@
 import { supabase } from './client';
 import { currentUserId } from './session';
+import { UserFacingError } from '../userFacingError';
 
 /**
  * Avatars and server icons, in a public bucket.
@@ -21,12 +22,7 @@ export const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 /** What the bucket accepts. Anything else is refused before it is uploaded. */
 const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 
-export class AvatarRejectedError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'AvatarRejectedError';
-  }
-}
+export class AvatarRejectedError extends UserFacingError {}
 
 function extensionFor(mimeType: string): string {
   switch (mimeType) {

@@ -1,11 +1,12 @@
+import { UserFacingError } from '../userFacingError';
+
 /** Postgres unique_violation. */
 const UNIQUE_VIOLATION = '23505';
 
 /** The username is already taken by another account. */
-export class UsernameTakenError extends Error {
+export class UsernameTakenError extends UserFacingError {
   constructor() {
     super('Die gebruikersnaam is al bezet. Kies een andere.');
-    this.name = 'UsernameTakenError';
   }
 }
 

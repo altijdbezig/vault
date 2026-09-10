@@ -60,10 +60,40 @@ Verder:
   meteen een sessie terug, waarna de client het keypair genereert en het profiel
   aanmaakt. Zet je bevestiging aan, dan is er na signup geen sessie en breekt
   die hele flow.
-- **Realtime** moet aanstaan op `messages` en `channel_members`.
+- **Realtime** moet aanstaan op `messages`, `channel_members` en
+  `message_reactions`. Bij `messages` moeten ook **UPDATE**-events doorgegeven
+  worden, niet alleen INSERT: bewerken en verwijderen van een bericht komen als
+  UPDATE binnen. De toggle in het dashboard zet normaal alle events aan;
+  controleer het, want zonder UPDATE zie je een bewerking pas na een herlaad en
+  blijft een verwijderd bericht aan de andere kant leesbaar zolang dat tabblad
+  open staat. `message_reactions` wordt door de migratie zelf aan de publicatie
+  toegevoegd.
 - Er is geen database-trigger die `profiles` vult, en die moet er ook niet
   komen: de public key bestaat alleen in de browser, dus alleen de client kan
   die rij correct aanmaken.
+
+### Storage-buckets
+
+Twee buckets, met tegengestelde regels. Migratie
+`20260910110800_storage_avatars_attachments.sql` maakt ze aan en zet de
+policies; dit is wat je in het dashboard terug hoort te zien.
+
+| Bucket | Publiek | Limiet | Mimetypes |
+| --- | --- | --- | --- |
+| `avatars` | **ja** | 2 MB | `image/png`, `image/jpeg`, `image/webp`, `image/gif` |
+| `attachments` | **nee** | 12 MB | alleen `application/octet-stream` |
+
+- `avatars` is met opzet publiek. Een avatar moet laden voor iedereen die je
+  naam ziet, dus er is geen sleutel om hem mee te versleutelen. De UI zegt dat
+  ook waar je er een uploadt.
+- `attachments` bevat **uitsluitend ciphertext**. Het bestand wordt in de
+  browser versleuteld en pas daarna geüpload. Dat de bucket alleen
+  `application/octet-stream` aanneemt is een vangnet: zou er ooit per ongeluk
+  een plaintext `image/png` of `application/pdf` heen gestuurd worden, dan
+  weigert Storage het bestand in plaats van het stil te bewaren. Verruim die
+  lijst dus niet.
+- De 12 MB op `attachments` is ruimer dan de 10 MB die de client toestaat. Dat
+  verschil is marge voor de PGP-framing eromheen.
 
 ### Waarschuwing: preview-deploys hebben een eigen URL
 
@@ -135,17 +165,35 @@ hem niet.
 
 | Bestand | Rauw | Gzip |
 | --- | --- | --- |
-| `index.js` (entry) | 389.57 kB | 111.22 kB |
+| `index.js` (entry) | 585.50 kB | 166.78 kB |
 | `openpgp.min.js` (lazy) | 387.50 kB | 129.38 kB |
-| `index.css` | 15.63 kB | 4.02 kB |
+| `index.css` | 36.23 kB | 8.33 kB |
+| highlight.js (15 lazy chunks) | ~74 kB | ~28 kB |
+| Inter + JetBrains Mono (woff2) | — | ~100 kB aan losse assets |
 
 De entry-chunk is grotendeels React plus de Supabase-client met realtime. Wil je
 daar later nog vanaf, dan is de realtime-client de volgende kandidaat om lui te
 laden.
 
+Twee dingen die bewust **niet** in de entry zitten:
+
+- **OpenPGP.js**, pas geladen bij de eerste keygen, unlock, encrypt of decrypt.
+- **highlight.js**, pas geladen bij het eerste codeblok in een bericht. De core
+  plus veertien talen staan in aparte chunks; het inlogscherm haalt er geen
+  enkele op.
+
+De fonts zijn losse woff2-bestanden met een `unicode-range`, dus een browser
+haalt alleen de subset op die hij nodig heeft (in de praktijk latin: ~48 kB voor
+Inter, ~21 kB per gewicht voor JetBrains Mono). Geen Google Fonts CDN, zie
+sectie 5.
+
 ---
 
 ## 5. Wat we bewust niet doen
+
+**Geen externe fonts.** Inter en JetBrains Mono komen uit `@fontsource`,
+gebundeld door Vite. Een privacy-app die bij elke paginalading het IP-adres van
+de lezer naar een CDN van Google stuurt, is een privacy-app die niet oplet.
 
 **Geen Vercel Analytics of Speed Insights.** Beide injecteren een script op elke
 pagina. In Vault staat de ontsleutelde plaintext van berichten in het DOM; een
