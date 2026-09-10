@@ -1,12 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  decryptFile,
   decryptMessage,
+  encryptFile,
   encryptMessage,
   getUnlockedKey,
   KeyLockedError,
   MissingSelfKeyError,
   NotARecipientError,
 } from '../lib/crypto';
+import {
+  attachmentPath,
+  downloadAttachment,
+  MAX_ATTACHMENT_BYTES,
+  removeAttachments,
+  uploadAttachment,
+} from '../lib/supabase/attachments';
+import { decodePayload, encodePayload } from '../lib/messagePayload';
+import type { AttachmentMeta } from '../lib/messagePayload';
 import { getPublicKeysForChannel } from '../lib/supabase/profiles';
 import {
   deleteMessage,
@@ -54,12 +65,21 @@ export interface DisplayMessage {
   deleted: boolean;
   /** The message this one answers, resolved for display. Null when it is not a reply. */
   replyTo: ReplyPreview | null;
+  /**
+   * Files that came with this message.
+   *
+   * The metadata (filename, size, type) lives inside the encrypted payload,
+   * not in a column: a filename is content. See lib/messagePayload.ts.
+   */
+  attachments: AttachmentMeta[];
 }
 
 interface DecryptedEntry {
   text: string | null;
   signatureValid: boolean | null;
   unreadable: boolean;
+  /** Attachment metadata from inside the encrypted payload. */
+  attachments: AttachmentMeta[];
 }
 
 interface PendingMessage {
@@ -69,6 +89,32 @@ interface PendingMessage {
   status: 'pending' | 'failed';
   /** Kept so a retry answers the same message the first attempt did. */
   replyToId: string | null;
+  /**
+   * Attachments that were already encrypted and uploaded.
+   *
+   * Kept on the pending row so a retry re-uses them instead of encrypting and
+   * uploading the same file a second time. Only the insert failed; the bytes
+   * are already in the bucket.
+   */
+  attachments: AttachmentMeta[];
+}
+
+/** What the upload of one message's attachments is doing right now. */
+export interface AttachmentProgress {
+  /** 1-based index of the file being worked on. */
+  current: number;
+  total: number;
+  /** The name of that file, so the line says something concrete. */
+  name: string;
+  stage: 'encrypting' | 'uploading';
+}
+
+/** A file the user picked, rejected before anything is encrypted. */
+export class AttachmentTooLargeError extends Error {
+  constructor(name: string) {
+    super(`"${name}" is groter dan 10 MB en kan niet verstuurd worden.`);
+    this.name = 'AttachmentTooLargeError';
+  }
 }
 
 export interface UseMessagesResult {
@@ -87,8 +133,18 @@ export interface UseMessagesResult {
   error: string | null;
   /** Fetches the page before the oldest message we hold. */
   loadOlder(): Promise<void>;
-  /** Sends a message, optionally as a reply to another one. */
-  send(plaintext: string, replyToId?: string | null): Promise<void>;
+  /** Sends a message, optionally as a reply and optionally with files. */
+  send(plaintext: string, replyToId?: string | null, files?: readonly File[]): Promise<void>;
+  /** What the current upload is doing, or null when nothing is uploading. */
+  attachmentProgress: AttachmentProgress | null;
+  /**
+   * Downloads and decrypts one attachment.
+   *
+   * Returns a Blob and not an object URL on purpose: creating the URL is a DOM
+   * concern and revoking it belongs to whichever component rendered it. A hook
+   * handing out URLs it cannot see the lifetime of is how you leak them.
+   */
+  loadAttachment(meta: AttachmentMeta, senderId: string): Promise<Blob>;
   retry(localId: string): Promise<void>;
   dismiss(localId: string): void;
   /** Re-encrypts your own message for the current members and stores it. */
@@ -166,6 +222,7 @@ export function useMessages(channelId: string | null): UseMessagesResult {
   const [reachedStart, setReachedStart] = useState(false);
   const [connected, setConnected] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [attachmentProgress, setAttachmentProgress] = useState<AttachmentProgress | null>(null);
 
   // Guards the paging request against a scroll handler that fires many times
   // per second. A ref, not the state above: state updates land too late.
@@ -199,6 +256,7 @@ export function useMessages(channelId: string | null): UseMessagesResult {
     setLoadingOlder(false);
     setReachedStart(false);
     setConnected(true);
+    setAttachmentProgress(null);
     loadingOlderRef.current = false;
 
     if (!channelId) {
@@ -339,7 +397,7 @@ export function useMessages(channelId: string | null): UseMessagesResult {
       // an empty string to OpenPGP would throw, and the tombstone does not
       // need a decrypt to be rendered.
       if (row.deleted_at !== null || row.ciphertext === '') {
-        return { text: null, signatureValid: null, unreadable: false };
+        return { text: null, signatureValid: null, unreadable: false, attachments: [] };
       }
 
       const sender = membersRef.current.find((member) => member.userId === row.sender_id);
@@ -350,23 +408,27 @@ export function useMessages(channelId: string | null): UseMessagesResult {
           privateKey: getUnlockedKey(),
           senderPublicKey: sender?.publicKey ?? undefined,
         });
+        // The plaintext may be an envelope carrying attachment metadata. A
+        // message from before attachments existed decodes as bare text.
+        const payload = decodePayload(result.plaintext);
         return {
-          text: result.plaintext,
+          text: payload.text,
           signatureValid: result.signatureValid,
           unreadable: false,
+          attachments: payload.attachments,
         };
       } catch (caught) {
         if (caught instanceof NotARecipientError) {
           // Expected for anything sent before we joined this channel.
-          return { text: null, signatureValid: null, unreadable: true };
+          return { text: null, signatureValid: null, unreadable: true, attachments: [] };
         }
         if (caught instanceof KeyLockedError) {
           lock();
-          return { text: null, signatureValid: null, unreadable: true };
+          return { text: null, signatureValid: null, unreadable: true, attachments: [] };
         }
         // Log the error, never the ciphertext or the plaintext.
         console.error('Ontsleutelen mislukt voor bericht', row.id, caught);
-        return { text: null, signatureValid: null, unreadable: true };
+        return { text: null, signatureValid: null, unreadable: true, attachments: [] };
       }
     },
     [lock],
@@ -538,15 +600,98 @@ export function useMessages(channelId: string | null): UseMessagesResult {
     [currentUserId],
   );
 
+  /**
+   * Encrypts and uploads the files for one message.
+   *
+   * Sequentially, not in parallel. Encrypting three 10 MB files at once means
+   * holding six copies in memory and starving the tab of a main thread, and
+   * the progress line can then only say "busy". One at a time is slower on a
+   * fast connection and survives a phone.
+   */
+  const prepareAttachments = useCallback(
+    async (channel: string, files: readonly File[]): Promise<AttachmentMeta[]> => {
+      const prepared: AttachmentMeta[] = [];
+      const memberKeys = (await getPublicKeysForChannel(channel))
+        .map((member) => member.publicKey)
+        .filter((key): key is string => key !== null);
+
+      for (const [index, file] of files.entries()) {
+        setAttachmentProgress({
+          current: index + 1,
+          total: files.length,
+          name: file.name,
+          stage: 'encrypting',
+        });
+
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const ciphertext = await encryptFile({
+          bytes,
+          recipientPublicKeys: memberKeys,
+          signingKey: getUnlockedKey(),
+        });
+
+        setAttachmentProgress({
+          current: index + 1,
+          total: files.length,
+          name: file.name,
+          stage: 'uploading',
+        });
+
+        const path = attachmentPath(channel);
+        await uploadAttachment(path, ciphertext);
+
+        prepared.push({
+          path,
+          name: file.name,
+          size: file.size,
+          // An empty type happens with some file pickers; octet-stream is the
+          // honest fallback and renders as a plain download row.
+          mimeType: file.type || 'application/octet-stream',
+        });
+      }
+
+      return prepared;
+    },
+    [],
+  );
+
   /** Encrypts to every current member and inserts the row. */
   const deliver = useCallback(
-    async (localId: string, plaintext: string, replyToId: string | null): Promise<void> => {
+    async (
+      localId: string,
+      plaintext: string,
+      replyToId: string | null,
+      files: readonly File[],
+      alreadyUploaded: AttachmentMeta[],
+    ): Promise<void> => {
       if (!channelId) {
         return;
       }
 
       try {
-        const ciphertext = await encryptForChannel(channelId, plaintext);
+        // A retry re-uses what was already uploaded: only the insert failed,
+        // and the bytes are in the bucket.
+        const attachments =
+          alreadyUploaded.length > 0
+            ? alreadyUploaded
+            : files.length > 0
+              ? await prepareAttachments(channelId, files)
+              : [];
+
+        if (attachments.length > 0) {
+          // Remember them on the pending row before the insert, so a failure
+          // here does not re-upload on the next attempt.
+          setPending((current) =>
+            current.map((item) =>
+              item.localId === localId ? { ...item, attachments } : item,
+            ),
+          );
+        }
+
+        setAttachmentProgress(null);
+
+        const payload = encodePayload({ text: plaintext, attachments });
+        const ciphertext = await encryptForChannel(channelId, payload);
         const row = await sendMessage(channelId, ciphertext, replyToId);
 
         // We already know this plaintext, so skip a pointless decrypt round.
@@ -554,6 +699,7 @@ export function useMessages(channelId: string | null): UseMessagesResult {
           text: plaintext,
           signatureValid: true,
           unreadable: false,
+          attachments,
         });
         startedRef.current.add(row.id);
         setDecryptedVersion((version) => version + 1);
@@ -563,6 +709,7 @@ export function useMessages(channelId: string | null): UseMessagesResult {
         setRows((current) => mergeRows(current, [row]));
         setPending((current) => current.filter((item) => item.localId !== localId));
       } catch (caught) {
+        setAttachmentProgress(null);
         setPending((current) =>
           current.map((item) =>
             item.localId === localId ? { ...item, status: 'failed' } : item,
@@ -584,13 +731,27 @@ export function useMessages(channelId: string | null): UseMessagesResult {
         setError('Bericht kon niet verstuurd worden.');
       }
     },
-    [channelId, encryptForChannel, lock],
+    [channelId, encryptForChannel, lock, prepareAttachments],
   );
 
   const send = useCallback(
-    async (plaintext: string, replyToId: string | null = null): Promise<void> => {
+    async (
+      plaintext: string,
+      replyToId: string | null = null,
+      files: readonly File[] = [],
+    ): Promise<void> => {
       const trimmed = plaintext.trim();
-      if (!trimmed || !channelId) {
+      // A message with only an attachment and no words is a normal thing to
+      // send, so an empty text is fine as long as there is a file.
+      if (!channelId || (trimmed === '' && files.length === 0)) {
+        return;
+      }
+
+      // Checked before anything is encrypted: rejecting a 40 MB video after
+      // spending twenty seconds encrypting it would be rude.
+      const tooBig = files.find((file) => file.size > MAX_ATTACHMENT_BYTES);
+      if (tooBig) {
+        setError(new AttachmentTooLargeError(tooBig.name).message);
         return;
       }
 
@@ -605,10 +766,11 @@ export function useMessages(channelId: string | null): UseMessagesResult {
           createdAt: new Date().toISOString(),
           status: 'pending',
           replyToId,
+          attachments: [],
         },
       ]);
 
-      await deliver(localId, trimmed, replyToId);
+      await deliver(localId, trimmed, replyToId, files, []);
     },
     [channelId, deliver],
   );
@@ -626,9 +788,46 @@ export function useMessages(channelId: string | null): UseMessagesResult {
           candidate.localId === localId ? { ...candidate, status: 'pending' } : candidate,
         ),
       );
-      await deliver(localId, item.plaintext, item.replyToId);
+      // No files passed: anything that was uploaded is on the pending row
+      // already, and anything that was not never got a File object we still
+      // hold, so a retry after an encryption failure has to start over from
+      // the picker. Rare enough to accept; silently sending the text without
+      // the attachment would be worse.
+      await deliver(localId, item.plaintext, item.replyToId, [], item.attachments);
     },
     [deliver, pending],
+  );
+
+  /**
+   * Downloads and decrypts one attachment.
+   *
+   * Lives here rather than in the component that renders it, because it needs
+   * the unlocked private key and crypto does not belong in components. The
+   * Blob goes back up; making and revoking an object URL is the caller's job.
+   */
+  const loadAttachment = useCallback(
+    async (meta: AttachmentMeta, senderId: string): Promise<Blob> => {
+      const ciphertext = await downloadAttachment(meta.path);
+      const sender = membersRef.current.find((member) => member.userId === senderId);
+
+      const decrypted = await decryptFile({
+        bytes: ciphertext,
+        privateKey: getUnlockedKey(),
+        senderPublicKey: sender?.publicKey ?? undefined,
+      });
+
+      // The real mime type comes from the encrypted payload, not from Storage,
+      // which only ever saw octet-stream. This is what lets an image render as
+      // an image instead of downloading as an unknown blob.
+      //
+      // BlobPart wants an ArrayBuffer; the decrypted bytes may be a view into
+      // a larger buffer, so slice through the view rather than handing over
+      // .buffer, which could carry neighbouring bytes.
+      return new Blob([decrypted.bytes.slice().buffer as ArrayBuffer], {
+        type: meta.mimeType,
+      });
+    },
+    [],
   );
 
   /** Drops a failed message the user does not want to retry. */
@@ -657,8 +856,14 @@ export function useMessages(channelId: string | null): UseMessagesResult {
 
       setError(null);
 
+      // Editing changes the words, not the files. The attachments have to be
+      // carried into the new payload or they would drop off the message, and
+      // the objects would stay in the bucket with nothing pointing at them.
+      const attachments = decryptedRef.current.get(messageId)?.attachments ?? [];
+
       try {
-        const ciphertext = await encryptForChannel(channelId, trimmed);
+        const payload = encodePayload({ text: trimmed, attachments });
+        const ciphertext = await encryptForChannel(channelId, payload);
         const row = await updateMessage(messageId, ciphertext);
 
         // The plaintext is already known, so skip a decrypt round. signature
@@ -667,6 +872,7 @@ export function useMessages(channelId: string | null): UseMessagesResult {
           text: trimmed,
           signatureValid: true,
           unreadable: false,
+          attachments,
         });
         startedRef.current.add(row.id);
         setDecryptedVersion((version) => version + 1);
@@ -694,8 +900,27 @@ export function useMessages(channelId: string | null): UseMessagesResult {
   const remove = useCallback(async (messageId: string): Promise<void> => {
     setError(null);
 
+    // Read the paths before the cache entry is dropped: after the delete the
+    // metadata is gone, and with it any way to find the files.
+    const paths = decryptedRef.current.get(messageId)?.attachments.map((a) => a.path) ?? [];
+
     try {
       const row = await deleteMessage(messageId);
+
+      if (paths.length > 0) {
+        // Deliberately after the message update and deliberately not fatal.
+        // Blanking the ciphertext is what makes the message unreadable; the
+        // files are separate objects and their own removal can fail (only the
+        // uploader may delete them). A leftover file is still encrypted for
+        // the members of that channel, so it leaks nothing new -- it is
+        // unreclaimed space, and it is written down as such in
+        // docs/migraties-en-rls-tests.md.
+        try {
+          await removeAttachments(paths);
+        } catch (caught) {
+          console.error('Bijlagen van een verwijderd bericht bleven staan:', caught);
+        }
+      }
 
       decryptedRef.current.delete(row.id);
       startedRef.current.add(row.id);
@@ -762,6 +987,7 @@ export function useMessages(channelId: string | null): UseMessagesResult {
         editedAt: row.edited_at ?? null,
         deleted: row.deleted_at !== null,
         replyTo: previewFor(row.reply_to_id ?? null),
+        attachments: entry?.attachments ?? [],
       };
     });
 
@@ -777,6 +1003,7 @@ export function useMessages(channelId: string | null): UseMessagesResult {
       editedAt: null,
       deleted: false,
       replyTo: previewFor(item.replyToId),
+      attachments: item.attachments,
     }));
 
     return [...sent, ...optimistic];
@@ -804,5 +1031,7 @@ export function useMessages(channelId: string | null): UseMessagesResult {
     dismiss,
     edit,
     remove,
+    attachmentProgress,
+    loadAttachment,
   };
 }

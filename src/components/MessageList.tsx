@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { AttachmentView } from './AttachmentView';
 import { Avatar } from './Avatar';
 import { ContextMenu } from './ContextMenu';
 import type { MenuItem } from './ContextMenu';
@@ -8,6 +9,7 @@ import { MessageText } from './MessageText';
 import { ReactionBar } from './ReactionBar';
 import { SkeletonMessages } from './Skeleton';
 import type { DisplayMessage } from '../hooks/useMessages';
+import type { AttachmentMeta } from '../lib/messagePayload';
 import type { ChannelMemberKey, ReactionGroup } from '../types';
 
 interface MessageListProps {
@@ -41,6 +43,8 @@ interface MessageListProps {
   jumpTarget?: string | null;
   /** Reports whether the target was on screen, so the caller can say so. */
   onJumpHandled?: (found: boolean) => void;
+  /** Downloads and decrypts an attachment. Comes from useMessages. */
+  onLoadAttachment: (meta: AttachmentMeta, senderId: string) => Promise<Blob>;
 }
 
 /** How far from the bottom still counts as "following along". */
@@ -122,6 +126,7 @@ export function MessageList({
   onDelete,
   jumpTarget = null,
   onJumpHandled,
+  onLoadAttachment,
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -330,6 +335,7 @@ export function MessageList({
               onDismiss={() => onDismiss(message.id)}
               onJump={jumpTo}
               onOpenMenu={(items, x, y) => setMenu({ items, x, y })}
+              onLoadAttachment={onLoadAttachment}
             />
           </div>
         );
@@ -387,6 +393,7 @@ interface MessageRowProps {
   onDismiss: () => void;
   onJump: (messageId: string) => boolean;
   onOpenMenu: (items: MenuItem[], x: number, y: number) => void;
+  onLoadAttachment: (meta: AttachmentMeta, senderId: string) => Promise<Blob>;
 }
 
 function MessageRow({
@@ -415,6 +422,7 @@ function MessageRow({
   onDismiss,
   onJump,
   onOpenMenu,
+  onLoadAttachment,
 }: MessageRowProps) {
   const [jumpFailed, setJumpFailed] = useState(false);
   const displayName = member?.displayName ?? message.senderName;
@@ -548,6 +556,16 @@ function MessageRow({
             )}
           </div>
         )}
+
+        {/* Attachments survive an edit, so they render outside the edit box
+            and under a deleted message they are gone with the metadata. */}
+        {!message.deleted ? (
+          <AttachmentView
+            attachments={message.attachments}
+            senderId={message.senderId}
+            onLoad={onLoadAttachment}
+          />
+        ) : null}
 
         {message.signatureValid === false ? (
           <p className="mt-0.5 text-xs text-warning">

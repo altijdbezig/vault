@@ -12,6 +12,9 @@ export type { GeneratedKeyPair, GenerateKeyPairOptions } from './keys';
 export { decryptMessage, encryptMessage } from './encrypt';
 export type { DecryptedMessage, DecryptMessageOptions, EncryptMessageOptions } from './encrypt';
 
+export { decryptFile, encryptFile } from './files';
+export type { DecryptedFile, DecryptFileOptions, EncryptFileOptions } from './files';
+
 export {
   clearStoredKey,
   getUnlockedKey,

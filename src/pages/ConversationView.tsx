@@ -63,6 +63,8 @@ export function ConversationView({
     dismiss,
     edit,
     remove,
+    attachmentProgress,
+    loadAttachment,
   } = useMessages(channelId);
 
   const wide = useIsWideScreen();
@@ -108,8 +110,8 @@ export function ConversationView({
   }, [channelId]);
 
   const handleSend = useCallback(
-    (plaintext: string): void => {
-      void send(plaintext, replyTo?.id ?? null);
+    (plaintext: string, files: File[]): void => {
+      void send(plaintext, replyTo?.id ?? null, files);
       setReplyTo(null);
       stopTyping();
     },
@@ -298,6 +300,7 @@ export function ConversationView({
           }}
           jumpTarget={jumpTarget}
           onJumpHandled={() => setJumpTarget(null)}
+          onLoadAttachment={loadAttachment}
         />
 
         {/*
@@ -318,6 +321,7 @@ export function ConversationView({
           replyTo={replyTo}
           onCancelReply={() => setReplyTo(null)}
           onTyping={announce}
+          uploading={attachmentProgress}
           placeholder={`Bericht aan ${channelPrefix(channelType)}${title}`}
         />
       </section>

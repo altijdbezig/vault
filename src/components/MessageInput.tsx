@@ -13,7 +13,7 @@ export interface ReplyTarget {
 interface MessageInputProps {
   disabled?: boolean;
   placeholder?: string;
-  onSend: (plaintext: string) => void;
+  onSend: (plaintext: string, files: File[]) => void;
   /** Usernames in this channel, for @-completion. */
   usernames: readonly string[];
   /** The message being answered, if any. */
@@ -21,6 +21,8 @@ interface MessageInputProps {
   onCancelReply?: () => void;
   /** Called on every keystroke, for the typing indicator. */
   onTyping?: () => void;
+  /** What the current upload is doing, so the box can say so. */
+  uploading?: { current: number; total: number; name: string; stage: 'encrypting' | 'uploading' } | null;
 }
 
 /** How many completions to show at once. */
@@ -56,8 +58,11 @@ export function MessageInput({
   replyTo = null,
   onCancelReply,
   onTyping,
+  uploading = null,
 }: MessageInputProps) {
   const [value, setValue] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [cursor, setCursor] = useState(0);
   const [active, setActive] = useState(0);
   /**
@@ -94,12 +99,27 @@ export function MessageInput({
 
   function submit(): void {
     const trimmed = value.trim();
-    if (!trimmed || disabled) {
+    // An attachment with no words is a normal message; empty with no files is
+    // not.
+    if (disabled || (trimmed === '' && files.length === 0)) {
       return;
     }
     setValue('');
+    setFiles([]);
     setDismissed(null);
-    onSend(trimmed);
+    // The picker keeps its last selection, so picking the same file twice in a
+    // row would otherwise do nothing the second time.
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    onSend(trimmed, files);
+  }
+
+  function addFiles(picked: FileList | null): void {
+    if (!picked || picked.length === 0) {
+      return;
+    }
+    setFiles((current) => [...current, ...Array.from(picked)]);
   }
 
   function complete(username: string): void {
@@ -197,6 +217,45 @@ export function MessageInput({
         </div>
       ) : null}
 
+      {files.length > 0 ? (
+        <ul className="mb-2 flex flex-wrap gap-1.5">
+          {files.map((file, index) => (
+            <li
+              key={`${file.name}-${index}`}
+              className="flex max-w-full items-center gap-1.5 rounded-md border border-subtle bg-overlay py-1 pl-2 pr-1"
+            >
+              <span aria-hidden="true" className="text-2xs">
+                {file.type.startsWith('image/') ? '🖼️' : '📎'}
+              </span>
+              <span className="min-w-0 truncate text-2xs text-secondary">{file.name}</span>
+              <span className="shrink-0 text-2xs text-muted">
+                {file.size < 1024 * 1024
+                  ? `${Math.max(1, Math.round(file.size / 1024))} kB`
+                  : `${(file.size / (1024 * 1024)).toFixed(1)} MB`}
+              </span>
+              <IconButton
+                label={`${file.name} weghalen`}
+                size="sm"
+                onClick={() => setFiles((current) => current.filter((_, i) => i !== index))}
+              >
+                ×
+              </IconButton>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {uploading ? (
+        <p role="status" className="mb-2 text-2xs text-muted">
+          {uploading.stage === 'encrypting' ? 'Versleutelen' : 'Uploaden'}:{' '}
+          <span className="text-secondary">{uploading.name}</span>
+          {uploading.total > 1 ? ` (${uploading.current} van ${uploading.total})` : null}
+          {/* Real byte progress is not available: supabase-js has no upload
+              progress callback, so this reports the stage per file instead of
+              inventing a percentage. */}
+        </p>
+      ) : null}
+
       <div className="relative flex items-end gap-2">
         {suggestions.length > 0 ? (
           <ul
@@ -250,10 +309,26 @@ export function MessageInput({
           aria-label="Bericht"
           className="max-h-40 min-h-11 w-full resize-none rounded-md border border-subtle bg-inset px-3 py-2.5 text-base text-primary transition-colors outline-none placeholder:text-muted focus:border-accent disabled:opacity-50 sm:text-sm"
         />
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          onChange={(event) => addFiles(event.target.files)}
+          className="sr-only"
+          aria-label="Bestanden kiezen"
+        />
+        <IconButton
+          label="Bijlage toevoegen"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={disabled}
+          className="h-11 w-11 border border-subtle bg-inset"
+        >
+          📎
+        </IconButton>
         <button
           type="button"
           onClick={submit}
-          disabled={disabled || value.trim().length === 0}
+          disabled={disabled || (value.trim().length === 0 && files.length === 0)}
           className="h-11 shrink-0 rounded-md bg-accent px-4 text-sm font-medium text-accent-on transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
         >
           Stuur
