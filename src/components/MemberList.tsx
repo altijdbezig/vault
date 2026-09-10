@@ -1,7 +1,9 @@
 import { Avatar } from './Avatar';
 import { Fingerprint } from './Fingerprint';
 import { OnlineDot } from './OnlineDot';
+import { VerifiedBadge } from './VerifiedBadge';
 import { usePresence } from '../hooks/usePresence';
+import { useVerification } from '../hooks/useVerification';
 import type { ChannelMemberKey } from '../types';
 
 interface MemberListProps {
@@ -19,6 +21,7 @@ interface MemberListProps {
  */
 export function MemberList({ members, currentUserId, onOpenProfile }: MemberListProps) {
   const { isOnline } = usePresence();
+  const { statusFor } = useVerification();
 
   // Online first, then alphabetical. In a channel of twenty, who is around is
   // the thing you are looking for; a fixed alphabetical list makes you scan
@@ -68,6 +71,10 @@ export function MemberList({ members, currentUserId, onOpenProfile }: MemberList
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-1.5">
                   <span className="min-w-0 truncate text-sm text-primary">{name}</span>
+                  <VerifiedBadge
+                    status={statusFor(member.userId, member.fingerprint)}
+                    name={name}
+                  />
                   {member.userId === currentUserId ? (
                     <span className="shrink-0 text-2xs text-muted">(jij)</span>
                   ) : null}

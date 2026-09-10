@@ -14,7 +14,13 @@ import {
 } from '../lib/crypto';
 import { supabase } from '../lib/supabase/client';
 import { isUniqueViolation, UsernameTakenError } from '../lib/supabase/errors';
-import { createProfile, getProfile, getProfileByUsername } from '../lib/supabase/profiles';
+import {
+  createProfile,
+  getProfile,
+  getProfileByUsername,
+  updateProfile,
+} from '../lib/supabase/profiles';
+import type { UpdateProfileInput } from '../lib/supabase/profiles';
 import type { Profile } from '../types';
 
 /**
@@ -52,6 +58,15 @@ export interface AuthContextValue {
   importKey(armored: string, password: string): Promise<void>;
   /** Returns the stored, still passphrase-encrypted key, for backup export. */
   exportEncryptedKey(): Promise<string>;
+  /**
+   * Updates your display name or avatar.
+   *
+   * Lives here rather than in a settings hook so there is one copy of the
+   * profile in the app: the sidebar, the member list and the settings screen
+   * all read it from this context, and a second source would let them
+   * disagree about your own name.
+   */
+  saveProfile(input: UpdateProfileInput): Promise<void>;
 }
 
 /** The imported key does not belong to this account's public key. */
@@ -270,6 +285,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const saveProfile = useCallback(async (input: UpdateProfileInput): Promise<void> => {
+    setProfile(await updateProfile(input));
+  }, []);
+
   const exportEncryptedKey = useCallback(async (): Promise<string> => {
     if (!user) {
       throw new Error('Geen actieve sessie om een sleutel uit te exporteren.');
@@ -294,6 +313,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       importKey,
       exportEncryptedKey,
+      saveProfile,
     }),
     [
       status,
@@ -307,6 +327,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       importKey,
       exportEncryptedKey,
+      saveProfile,
     ],
   );
 

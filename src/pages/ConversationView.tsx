@@ -301,6 +301,7 @@ export function ConversationView({
           jumpTarget={jumpTarget}
           onJumpHandled={() => setJumpTarget(null)}
           onLoadAttachment={loadAttachment}
+          onOpenProfile={onOpenProfile}
         />
 
         {/*

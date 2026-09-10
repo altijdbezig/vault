@@ -17,13 +17,17 @@ export type { DecryptedFile, DecryptFileOptions, EncryptFileOptions } from './fi
 
 export {
   clearStoredKey,
+  clearVerifiedFingerprint,
   getUnlockedKey,
   isUnlocked,
+  listVerifiedFingerprints,
   loadEncryptedPrivateKey,
   lockSession,
   saveEncryptedPrivateKey,
   setUnlockedKey,
+  setVerifiedFingerprint,
 } from './storage';
+export type { TrustRecord } from './storage';
 
 export {
   KeyLockedError,

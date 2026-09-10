@@ -1,5 +1,6 @@
 import type { ChannelMemberKey, Profile } from '../../types';
 import { supabase } from './client';
+import { currentUserId } from './session';
 
 /** Row shape of public.profiles, as stored in Postgres. */
 interface ProfileRow {
@@ -84,6 +85,50 @@ export async function getProfile(userId: string): Promise<Profile | null> {
   }
 
   return data ? toProfile(data) : null;
+}
+
+export interface UpdateProfileInput {
+  /** Null clears it, so the username is used again. */
+  displayName?: string | null;
+  avatarUrl?: string | null;
+}
+
+/**
+ * Updates your own profile.
+ *
+ * Only the fields that were passed, so setting a display name does not wipe an
+ * avatar. Note what is NOT updatable here and cannot be: public_key and
+ * key_fingerprint are locked by the update policy (see the
+ * profile_key_unchanged function in the migration). Swapping your own public
+ * key is the attack that key verification exists to catch, and it is not
+ * something the client is allowed to do at all.
+ */
+export async function updateProfile(input: UpdateProfileInput): Promise<Profile> {
+  const me = await currentUserId();
+
+  const patch: Record<string, string | null> = {};
+  if ('displayName' in input) {
+    // Empty string would fail the profiles_display_name_not_blank constraint,
+    // and it means the same thing as "no display name" anyway.
+    const trimmed = input.displayName?.trim();
+    patch['display_name'] = trimmed ? trimmed : null;
+  }
+  if ('avatarUrl' in input) {
+    patch['avatar_url'] = input.avatarUrl ?? null;
+  }
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(patch)
+    .eq('id', me)
+    .select(PROFILE_COLUMNS)
+    .single<ProfileRow>();
+
+  if (error) {
+    throw error;
+  }
+
+  return toProfile(data);
 }
 
 export async function getProfileByUsername(username: string): Promise<Profile | null> {

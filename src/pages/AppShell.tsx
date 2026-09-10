@@ -6,22 +6,23 @@ import { ChannelList } from '../components/ChannelList';
 import { ChannelSidebar } from '../components/ChannelSidebar';
 import { CreateChannelDialog } from '../components/CreateChannelDialog';
 import { CreateServerDialog } from '../components/CreateServerDialog';
+import { Avatar } from '../components/Avatar';
 import { ErrorNotice } from '../components/ErrorNotice';
-import { Fingerprint } from '../components/Fingerprint';
+import { IconButton } from '../components/IconButton';
 import { NewDmDialog } from '../components/NewDmDialog';
 import { NewGroupDialog } from '../components/NewGroupDialog';
-import { SegmentedControl } from '../components/SegmentedControl';
+import { ProfileCard } from '../components/ProfileCard';
 import { ServerRail } from '../components/ServerRail';
 import { useAuth } from '../hooks/useAuth';
 import { useChannels } from '../hooks/useChannels';
 import { useIsWideScreen } from '../hooks/useMediaQuery';
 import { useServerChannels, useServers } from '../hooks/useServers';
-import { useSettings } from '../hooks/useSettings';
 import { useUnread } from '../hooks/useUnread';
 import { describeError } from '../lib/errorMessages';
 import { inviteLinkFor } from '../lib/invite';
 import type { ChannelType } from '../types';
 import { ConversationView } from './ConversationView';
+import { SettingsDialog } from './SettingsDialog';
 
 /** Remembers where you were, so "/" can send you back there. */
 const LAST_PATH_KEY = 'vault:last-path';
@@ -45,7 +46,7 @@ function writeStored(key: string, path: string): void {
 }
 
 export function AppShell() {
-  const { user, profile, signOut, exportEncryptedKey } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -76,7 +77,6 @@ export function AppShell() {
   } = useChannels();
   const { servers, createServer, joinServer } = useServers();
   const { counts: unread, serverHasUnread, setActiveChannel } = useUnread();
-  const { settings, update } = useSettings();
   const wide = useIsWideScreen();
 
   const activeServer = servers.find((server) => server.id === activeServerId) ?? null;
@@ -94,13 +94,14 @@ export function AppShell() {
   const [showAddMember, setShowAddMember] = useState(false);
   const [showCreateServer, setShowCreateServer] = useState(false);
   const [showCreateChannel, setShowCreateChannel] = useState(false);
-  const [showKeyPanel, setShowKeyPanel] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  /** The profile card that is open, by user id. */
+  const [profileUserId, setProfileUserId] = useState<string | null>(null);
   /** Mobile only: the server rail is a drawer there, not a column. */
   const [showRail, setShowRail] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   /** Invite ids already handled, so StrictMode cannot join twice. */
   const handledInvites = useRef(new Set<string>());
-  const [exportError, setExportError] = useState<string | null>(null);
 
   /*
    * Following an invite link.
@@ -209,21 +210,6 @@ export function AppShell() {
     navigate('/dm');
   }
 
-  async function handleExport(): Promise<void> {
-    setExportError(null);
-    try {
-      const armored = await exportEncryptedKey();
-      const blob = new Blob([armored], { type: 'application/pgp-keys' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `vault-key-${profile?.username ?? 'account'}.asc`;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (caught) {
-      setExportError(describeError(caught));
-    }
-  }
 
   if (inviteServerId) {
     return (
@@ -335,55 +321,50 @@ export function AppShell() {
           />
         )}
 
-        <div className="border-t border-subtle p-2">
+        {/*
+          * The account row.
+          *
+          * Your own avatar and name open your profile card (which is where
+          * your fingerprint lives), and the gear opens settings. The
+          * fingerprint, the export and the theme switch used to be a panel
+          * that unfolded here; they moved into settings, where the rest of
+          * the choices are, so there is one place to look instead of two.
+          */}
+        <div className="flex items-center gap-1 border-t border-subtle p-2">
           <button
             type="button"
-            onClick={() => setShowKeyPanel((open) => !open)}
-            className="min-h-11 w-full truncate rounded px-2 py-1.5 text-left text-sm text-secondary hover:bg-hover"
+            onClick={() => setProfileUserId(user?.id ?? null)}
+            className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-hover"
           >
-            {profile?.username} <span className="text-muted">· sleutel</span>
+            <Avatar
+              userId={user?.id ?? 'onbekend'}
+              name={profile?.displayName ?? profile?.username ?? ''}
+              url={profile?.avatarUrl}
+              size="sm"
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm text-primary">
+                {profile?.displayName ?? profile?.username}
+              </span>
+              {profile?.displayName ? (
+                <span className="block truncate text-2xs text-muted">
+                  @{profile.username}
+                </span>
+              ) : null}
+            </span>
           </button>
 
-          {showKeyPanel ? (
-            <div className="mt-2 rounded-lg border border-subtle bg-overlay p-2.5">
-              <SegmentedControl
-                legend="Thema"
-                value={settings.theme}
-                onChange={(theme) => update('theme', theme)}
-                options={[
-                  { value: 'system', label: 'Systeem' },
-                  { value: 'dark', label: 'Donker' },
-                  { value: 'light', label: 'Licht' },
-                ]}
-              />
-              <div className="my-2.5 h-px bg-subtle" />
-              {profile ? <Fingerprint value={profile.fingerprint} /> : null}
-              <p className="mt-2 text-xs leading-relaxed text-muted">
-                Vergelijk deze vingerafdruk buiten Vault om met je gesprekspartners.
-              </p>
-              <div className="mt-2 flex flex-col gap-1">
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    void handleExport();
-                  }}
-                >
-                  Sleutel exporteren
-                </Button>
-                <Button
-                  variant="danger"
-                  onClick={() => {
-                    void signOut();
-                  }}
-                >
-                  Uitloggen
-                </Button>
-              </div>
-              <div className="mt-2">
-                <ErrorNotice message={exportError} />
-              </div>
-            </div>
-          ) : null}
+          <IconButton label="Instellingen" onClick={() => setShowSettings(true)}>
+            ⚙
+          </IconButton>
+          <IconButton
+            label="Uitloggen"
+            onClick={() => {
+              void signOut();
+            }}
+          >
+            ⏻
+          </IconButton>
         </div>
       </aside>
 
@@ -396,6 +377,7 @@ export function AppShell() {
           description={activeChannel?.description ?? null}
           currentUserId={user?.id ?? null}
           onBack={goToList}
+          onOpenProfile={(userId) => setProfileUserId(userId)}
           onAddMember={inGroup ? () => setShowAddMember(true) : undefined}
           onLeaveGroup={
             inGroup
@@ -457,6 +439,47 @@ export function AppShell() {
           onCreate={createServer}
           onJoin={joinServer}
           onCreated={(serverId) => navigate(`/server/${serverId}`)}
+        />
+      ) : null}
+
+      {showSettings ? (
+        <SettingsDialog
+          onClose={() => setShowSettings(false)}
+          // Every channel you are in, so notifications can be muted per
+          // channel. DMs are named after the other person, server channels
+          // after their server, so two channels called "algemeen" are still
+          // told apart.
+          channels={[
+            ...dmChannels.map((channel) => ({
+              id: channel.id,
+              label: channel.displayName || 'gesprek',
+            })),
+            ...servers.flatMap((server) =>
+              (server.id === activeServerId ? serverChannels : []).map((channel) => ({
+                id: channel.id,
+                label: `${server.name} · #${channel.displayName}`,
+              })),
+            ),
+          ]}
+        />
+      ) : null}
+
+      {profileUserId ? (
+        <ProfileCard
+          userId={profileUserId}
+          isSelf={profileUserId === user?.id}
+          onClose={() => setProfileUserId(null)}
+          onStartDm={(username) => {
+            setProfileUserId(null);
+            void (async () => {
+              try {
+                const channelId = await startDm(username);
+                navigate(`/dm/${channelId}`);
+              } catch (caught) {
+                console.error('Kon geen gesprek beginnen:', caught);
+              }
+            })();
+          }}
         />
       ) : null}
 

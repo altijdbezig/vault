@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { PresenceProvider } from './hooks/usePresence';
 import { UnreadProvider } from './hooks/useUnread';
+import { VerificationProvider } from './hooks/useVerification';
 import { AppShell } from './pages/AppShell';
 import { SignInPage } from './pages/SignInPage';
 import { SignUpPage } from './pages/SignUpPage';
@@ -17,7 +18,9 @@ import { UnlockPage } from './pages/UnlockPage';
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <PresenceProvider>
-      <UnreadProvider>{children}</UnreadProvider>
+      <VerificationProvider>
+        <UnreadProvider>{children}</UnreadProvider>
+      </VerificationProvider>
     </PresenceProvider>
   );
 }

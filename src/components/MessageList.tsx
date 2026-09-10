@@ -45,6 +45,8 @@ interface MessageListProps {
   onJumpHandled?: (found: boolean) => void;
   /** Downloads and decrypts an attachment. Comes from useMessages. */
   onLoadAttachment: (meta: AttachmentMeta, senderId: string) => Promise<Blob>;
+  /** Opens the profile card for a sender. */
+  onOpenProfile?: (userId: string) => void;
 }
 
 /** How far from the bottom still counts as "following along". */
@@ -127,6 +129,7 @@ export function MessageList({
   jumpTarget = null,
   onJumpHandled,
   onLoadAttachment,
+  onOpenProfile,
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -336,6 +339,7 @@ export function MessageList({
               onJump={jumpTo}
               onOpenMenu={(items, x, y) => setMenu({ items, x, y })}
               onLoadAttachment={onLoadAttachment}
+              onOpenProfile={onOpenProfile}
             />
           </div>
         );
@@ -394,6 +398,7 @@ interface MessageRowProps {
   onJump: (messageId: string) => boolean;
   onOpenMenu: (items: MenuItem[], x: number, y: number) => void;
   onLoadAttachment: (meta: AttachmentMeta, senderId: string) => Promise<Blob>;
+  onOpenProfile?: (userId: string) => void;
 }
 
 function MessageRow({
@@ -423,6 +428,7 @@ function MessageRow({
   onJump,
   onOpenMenu,
   onLoadAttachment,
+  onOpenProfile,
 }: MessageRowProps) {
   const [jumpFailed, setJumpFailed] = useState(false);
   const displayName = member?.displayName ?? message.senderName;
@@ -488,7 +494,21 @@ function MessageRow({
       {/* The avatar column stays reserved on a grouped row, so the text of a
           run of messages lines up under itself. */}
       <div className="w-9 shrink-0 pt-0.5">
-        {grouped ? null : (
+        {grouped ? null : onOpenProfile && !isLocal ? (
+          <button
+            type="button"
+            onClick={() => onOpenProfile(message.senderId)}
+            aria-label={`Profiel van ${displayName}`}
+            className="rounded-full transition-opacity hover:opacity-80"
+          >
+            <Avatar
+              userId={message.senderId}
+              name={displayName}
+              url={member?.avatarUrl ?? null}
+              size="md"
+            />
+          </button>
+        ) : (
           <Avatar
             userId={message.senderId}
             name={displayName}
@@ -512,7 +532,17 @@ function MessageRow({
 
         {grouped ? null : (
           <header className="flex flex-wrap items-baseline gap-x-2">
-            <span className="text-sm font-semibold text-primary">{displayName}</span>
+            {onOpenProfile && !isLocal ? (
+              <button
+                type="button"
+                onClick={() => onOpenProfile(message.senderId)}
+                className="rounded text-sm font-semibold text-primary transition-colors hover:underline"
+              >
+                {displayName}
+              </button>
+            ) : (
+              <span className="text-sm font-semibold text-primary">{displayName}</span>
+            )}
             {member && member.displayName ? (
               <span className="text-2xs text-muted">@{member.username}</span>
             ) : null}

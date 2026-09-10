@@ -5,8 +5,17 @@ import { KeyLockedError } from './errors';
 import { readLockedPrivateKey } from './keys';
 
 const DB_NAME = 'vault';
-const DB_VERSION = 1;
+/**
+ * Version 2 adds the trust store.
+ *
+ * The upgrade is additive and guarded, so a browser holding a version 1
+ * database keeps its stored private key: losing that would mean losing every
+ * message on that device, which is the one thing a schema change here must
+ * never do.
+ */
+const DB_VERSION = 2;
 const STORE_NAME = 'keys';
+const TRUST_STORE = 'trust';
 
 interface StoredKey {
   userId: string;
@@ -15,10 +24,34 @@ interface StoredKey {
   savedAt: number;
 }
 
+/**
+ * A fingerprint somebody confirmed by hand.
+ *
+ * Local only, and it stays that way. Putting this on the server would mean the
+ * server decides who you trust, and the whole point of comparing a fingerprint
+ * out of band is that no server is involved in the answer.
+ */
+export interface TrustRecord {
+  /** ownerId:subjectId, so two accounts in one browser stay separate. */
+  id: string;
+  /** The signed-in user who made this decision. */
+  ownerId: string;
+  /** The person whose key was verified. */
+  subjectId: string;
+  /** The fingerprint as it was at the moment of verifying. */
+  fingerprint: string;
+  verifiedAt: number;
+}
+
 interface VaultDB extends DBSchema {
   [STORE_NAME]: {
     key: string;
     value: StoredKey;
+  };
+  [TRUST_STORE]: {
+    key: string;
+    value: TrustRecord;
+    indexes: { 'by-owner': string };
   };
 }
 
@@ -31,6 +64,12 @@ function getDB(): Promise<IDBPDatabase<VaultDB>> {
     upgrade(db) {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'userId' });
+      }
+      if (!db.objectStoreNames.contains(TRUST_STORE)) {
+        const store = db.createObjectStore(TRUST_STORE, { keyPath: 'id' });
+        // Indexed by owner so listing "everyone I verified" is one range
+        // query rather than a full scan filtered in JavaScript.
+        store.createIndex('by-owner', 'ownerId');
       }
     },
   });
@@ -68,6 +107,52 @@ export async function loadEncryptedPrivateKey(userId: string): Promise<string | 
 export async function clearStoredKey(userId: string): Promise<void> {
   const db = await getDB();
   await db.delete(STORE_NAME, userId);
+}
+
+/* ---------------------------------------------------------------------------
+ * Trust: fingerprints the user confirmed by hand.
+ * ------------------------------------------------------------------------- */
+
+function trustId(ownerId: string, subjectId: string): string {
+  return `${ownerId}:${subjectId}`;
+}
+
+/**
+ * Records that the user compared a fingerprint and it matched.
+ *
+ * Stores the fingerprint, not just a flag. That is the entire point: a flag
+ * would say "trusted" forever, while the stored value lets the next render
+ * notice that the key has changed since, which is the one security signal in
+ * this app that actually catches an attack.
+ */
+export async function setVerifiedFingerprint(
+  ownerId: string,
+  subjectId: string,
+  fingerprint: string,
+): Promise<void> {
+  const db = await getDB();
+  await db.put(TRUST_STORE, {
+    id: trustId(ownerId, subjectId),
+    ownerId,
+    subjectId,
+    fingerprint: fingerprint.toLowerCase(),
+    verifiedAt: Date.now(),
+  });
+}
+
+/** Forgets a verification, so the contact goes back to unverified. */
+export async function clearVerifiedFingerprint(
+  ownerId: string,
+  subjectId: string,
+): Promise<void> {
+  const db = await getDB();
+  await db.delete(TRUST_STORE, trustId(ownerId, subjectId));
+}
+
+/** Everything this user has verified on this device. */
+export async function listVerifiedFingerprints(ownerId: string): Promise<TrustRecord[]> {
+  const db = await getDB();
+  return await db.getAllFromIndex(TRUST_STORE, 'by-owner', ownerId);
 }
 
 /* ---------------------------------------------------------------------------

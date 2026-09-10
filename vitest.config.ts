@@ -5,6 +5,11 @@ import react from '@vitejs/plugin-react';
 // fake-indexeddb on plain node; the UI needs a DOM. Vitest 5 has no
 // environmentMatchGlobs any more, so this is split into projects.
 export default defineConfig({
+  // Same injection as vite.config.ts: the About tab reads __APP_VERSION__, and
+  // a test that renders it should not fall over on an undefined global.
+  define: {
+    __APP_VERSION__: JSON.stringify('test'),
+  },
   test: {
     projects: [
       {
