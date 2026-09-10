@@ -34,6 +34,11 @@ const mocks = vi.hoisted(() => ({
   subscribeToChannel: vi.fn(),
   subscribeToAllMessages: vi.fn(),
   trackPresence: vi.fn(),
+  trackTyping: vi.fn(),
+  fetchReactions: vi.fn(),
+  addReaction: vi.fn(),
+  removeReaction: vi.fn(),
+  subscribeToReactions: vi.fn(),
   fetchUnreadState: vi.fn(),
   markChannelRead: vi.fn(),
 }));
@@ -80,6 +85,56 @@ vi.mock('../../lib/supabase/messages', async (importOriginal) => ({
 
 vi.mock('../../lib/supabase/presence', () => ({
   trackPresence: mocks.trackPresence,
+}));
+
+/**
+ * Reactions and typing have to be mocked here for the same reason presence and
+ * messages already are: they open a real Realtime socket.
+ *
+ * ConversationView calls useReactions, which runs subscribeToReactions() and
+ * ends in supabase.channel('message_reactions:all').subscribe(). Measured on
+ * 10-09-2026 by wrapping supabase.channel: this one file opened 19 real
+ * channels. Against the dummy URL from .env.test each becomes an undici
+ * WebSocket that connects asynchronously and settles after the test that
+ * started it has already finished.
+ *
+ * When it settles, undici fires an Event from Node's realm at a target from
+ * jsdom's realm. The instanceof check across that boundary fails and vitest
+ * reports it as an unhandled error:
+ *
+ *   TypeError: The "event" argument must be an instance of Event.
+ *   Received an instance of Event
+ *
+ * Every test still passes and the run still exits 1. It is a race, so a slower
+ * machine loses it where a faster one wins — it showed up on the build machine
+ * and never here. Same class of realm mismatch as the Uint8Array alignment in
+ * src/test/setup-jsdom.ts.
+ *
+ * The three plain queries are mocked alongside the subscription so this test
+ * makes no network call at all, instead of firing REST requests at a dummy
+ * host and leaning on the hook to swallow the failure.
+ */
+vi.mock('../../lib/supabase/reactions', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  fetchReactions: mocks.fetchReactions,
+  addReaction: mocks.addReaction,
+  removeReaction: mocks.removeReaction,
+  subscribeToReactions: mocks.subscribeToReactions,
+}));
+
+/*
+ * Typing opened no socket in this run, because useTyping only joins the room
+ * when the typingIndicator setting is on and these tests start from a cleared
+ * localStorage. It is mocked anyway: the moment a test flips that setting on,
+ * trackTyping() opens `typing:<channelId>` per channel and this file is back to
+ * the same failure, in a spot that has nothing to do with what it was testing.
+ *
+ * importOriginal keeps TYPING_TIMEOUT_MS and TYPING_THROTTLE_MS real, because
+ * useTyping does its pruning arithmetic with them.
+ */
+vi.mock('../../lib/supabase/typing', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  trackTyping: mocks.trackTyping,
 }));
 
 vi.mock('../../lib/supabase/unread', async (importOriginal) => ({
@@ -192,6 +247,16 @@ beforeEach(() => {
   mocks.subscribeToChannel.mockReturnValue(() => {});
   mocks.subscribeToAllMessages.mockReturnValue(() => {});
   mocks.trackPresence.mockReturnValue(() => {});
+  // A TypingChannel: useTyping calls close() on cleanup, so it has to be there.
+  mocks.trackTyping.mockReturnValue({
+    announce: vi.fn(),
+    stop: vi.fn(),
+    close: vi.fn(),
+  });
+  mocks.fetchReactions.mockResolvedValue([]);
+  mocks.addReaction.mockResolvedValue(undefined);
+  mocks.removeReaction.mockResolvedValue(undefined);
+  mocks.subscribeToReactions.mockReturnValue(() => {});
   mocks.fetchUnreadState.mockResolvedValue({ counts: {}, channelServers: {} });
   mocks.markChannelRead.mockResolvedValue(undefined);
   mocks.joinServer.mockResolvedValue(undefined);

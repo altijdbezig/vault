@@ -167,6 +167,37 @@ en heeft geen browser, netwerk of Supabase-verbinding nodig — alle
 Supabase-calls zijn in de tests gemockt. Er is dus niets dat op Vercel anders
 zou moeten werken dan lokaal.
 
+### Controlepunt bij elke deploy: klopt de grootte van de entry-chunk?
+
+**Een groene build is geen bewijs dat de app werkt.** Ontbreken de
+`VITE_`-variabelen op Vercel, dan slaagt de build gewoon en levert hij een dode
+app op — zonder waarschuwing, zonder foutmelding in de log.
+
+Dat komt zo. `src/lib/supabase/client.ts` gooit bij het laden van de module als
+`VITE_SUPABASE_URL` of `VITE_SUPABASE_ANON_KEY` ontbreekt. Vite vult die
+variabelen tijdens de build letterlijk in, dus zonder waarden wordt het
+`if (!undefined || !undefined) throw`. De bundler ziet dan een module die altijd
+gooit, gooit alles erachter weg als dode code, en schudt zo de complete
+Supabase-client uit de bundel. Resultaat: exit 0, en een app die bij het openen
+meteen stukloopt.
+
+Het verschil is aan één getal te zien in de build-log:
+
+| entry-chunk | betekenis |
+| --- | --- |
+| **~586 kB** | goed — de Supabase-client zit erin |
+| **~186 kB** | fout — env-vars ontbraken, de client is eruit geschud |
+
+Kijk dus na elke deploy naar de regel `dist/assets/index-*.js` in de build-log.
+Zit die rond de 186 kB, ga dan niet in de code zoeken: de variabelen staan niet
+(of niet voor alle drie de omgevingen) in **Settings → Environment Variables**.
+Zie sectie 1.
+
+Hetzelfde is aan de gedeployde site te zien: haal `/assets/index-*.js` op en
+zoek er een tabelnaam in, bijvoorbeeld `message_reactions`. Tabelnamen zijn
+stringliteralen en worden niet geminificeerd, dus staan ze er niet in, dan
+draait er iets anders dan je denkt.
+
 ### Bundelgroottes
 
 OpenPGP.js is met afstand het grootste onderdeel en wordt daarom apart geladen:
